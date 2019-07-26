@@ -1,0 +1,670 @@
+
+/*
+	read,writeをパイプライン化
+	$2180へのwriteはパイプライン除外（ROMもWRAMもSDRAMの場合）
+
+	2014/5/18 転送ステージと次アドレスステージを分けた
+　　　おでかけレスターがちゃんと表示された
+　　　バハムートラグーンで一部ちらつく → 修正
+
+	2017/6/12 HDMAのクロック削減
+　　　通常の処理速度でクロノトリガーOP魔王城でちらつかなくなった
+*/
+
+%d READ_VD   0b001
+%d READ_NL   0b100
+%d READ_INDL 0b101
+%d READ_INDH 0b110
+%d READ_HD   0b111
+
+circuit dma_core
+{
+	instrin io_set(ch_in, conf_in, set_D_in);
+	input ch_in<3>, conf_in<4>, set_D_in<8>;
+	instrin io_get(ch_in, conf_in);
+	output get_D<8>;
+	reg_wr get_D_reg<8>;
+
+	reg_wr ch<3>, conf<4>, set_D<8>;
+
+	input for_DE1;
+	instrin run;
+
+	instrout read_req;
+	output r_bank<8>, r_adrs<16>;
+	input D_in<8>;
+	instrout write(w_bank, w_adrs, D_out);
+	output w_bank<8>, w_adrs<16>, D_out<8>;
+	instrin read_ack;
+
+	output running, ppu_to_mem;
+	output run_wdma; // for DE1
+
+	output f_halt, halt_code<8>;
+
+	regs f_PPU_to_MEM[8];
+	sel ch_f_PPU_to_MEM;
+	mem r43x0_5[8] = {0};
+	regs f_incdec[8];
+	sel ch_f_incdec;
+	regs f_fixed_MEM_adrs[8];
+	sel ch_f_fixed_MEM_adrs;
+	regs n_transfar_type[8]<3>;
+	sel ch_transfar_type<3>;
+	regs adrs_PPU[8]<8>;
+	sel ch_adrs_PPU<8>;
+	regs adrs_MEM_L[8]<8>;
+	regs adrs_MEM_H[8]<8>;
+	sel ch_adrs_MEM<16>;
+	regs bank_MEM[8]<8>;
+	sel ch_bank_MEM<8>;
+	regs r43x5[8]<8>;
+	regs r43x6[8]<8>;
+	sel ch_bytes<16>;
+
+	output v_running;
+	instrin v_start(run_ch);
+	input run_ch<8>;
+	reg_wr rch<3>, v_rch_save<3>;
+	reg_wr v_data<8>, v_trans<2>;
+	sel lest_dec_sig<16>;
+	rega v_run_ch[8];
+
+	sel temp_PPU<8>, trans<2>;
+	instrself acc_MEM, acc_PPU(trans), v_end;
+
+	instrin h_enable(run_ch);
+	instrin h_init;
+	rega h_ended[8];
+	rega do_transfer[8];
+	reg_wr fi_h_initialling;
+	rega h_run_en[8];
+	rega h_run_en_tmp[8];
+	rega h_run_ch[8];
+	instrin h_start;
+	reg_wr fi_h_transfer, fi_h_nextadrs;
+	regs f_indirect[8];
+	sel ch_f_indirect;
+	regs line_count[8]<8>;
+	sel ch_line_count<8>;
+	regs table_L[8]<8>;
+	regs table_H[8]<8>;
+	sel ch_table<16>;
+	sel ch_ind_adrs<16>;
+	regs ind_bank[8]<8>;
+	sel ch_ind_bank<8>;
+
+	reg h_data<8>;
+	sel h_running;
+	reg_wr wgo, h_count<2>;
+	instrself acc_TAB, h_end;
+
+	instrself read(rid, r_bank, r_adrs);
+	reg rid_reg<3>;
+	sel rid<3>;
+
+	instrself halt(h_code);
+	sel h_code<8>;
+	reg_wr h_code_reg<8>;
+
+instrout h_end_all;
+reg_wr h_initialling_reg, h_running_reg;
+
+%d regs_arg definition
+
+	stage_name io_set_stg{ task do(ch, conf, set_D); }
+	stage_name io_get_stg{ task do(ch, conf); }
+
+	stage_name v_fetch{ task do(); }
+	stage_name v_store{ task do(); }
+	stage_name h_init_stg { task do(); }
+	stage_name h_fetch{ task do(); }
+	stage_name h_store{ task do(); }
+	stage_name h_nextadrs{ task do(); }
+	stage_name read_wait{ task do(rid_reg); }
+	stage_name v_wdma{ task do(); }
+
+	v_running = v_run_ch_0 | v_run_ch_1 | v_run_ch_2 | v_run_ch_3 | v_run_ch_4 | v_run_ch_5 | v_run_ch_6 | v_run_ch_7;
+	h_running = fi_h_initialling | fi_h_transfer | fi_h_nextadrs; //h_run_ch_0 | h_run_ch_1 | h_run_ch_2 | h_run_ch_3 | h_run_ch_4 | h_run_ch_5 | h_run_ch_6 | h_run_ch_7;
+	running = v_running | h_running;
+
+h_initialling_reg := fi_h_initialling;
+if(h_initialling_reg & ^fi_h_initialling) h_end_all();
+
+h_running_reg := fi_h_nextadrs;
+if(h_running_reg & ^fi_h_nextadrs) h_end_all();
+
+	if(v_fetch.do | v_wdma.do){
+		ch_f_PPU_to_MEM = f_PPU_to_MEM[rch];
+		ch_f_incdec = f_incdec[rch];
+		ch_f_fixed_MEM_adrs = f_fixed_MEM_adrs[rch];
+		ch_transfar_type = n_transfar_type[rch];
+		ch_adrs_PPU = adrs_PPU[rch];
+		ch_adrs_MEM = adrs_MEM_H[rch] || adrs_MEM_L[rch];
+		ch_bank_MEM = bank_MEM[rch];
+		ch_bytes = r43x6[rch] || r43x5[rch];
+	}
+
+	if(h_init_stg.do | h_fetch.do | h_nextadrs.do){
+		ch_f_indirect = f_indirect[rch]; // 0x43x0<6>
+		ch_transfar_type = n_transfar_type[rch];
+		ch_adrs_PPU = adrs_PPU[rch];
+		ch_bank_MEM = bank_MEM[rch];
+		ch_ind_adrs = r43x6[rch] || r43x5[rch];
+		ch_ind_bank = ind_bank[rch]; // 0x43x7
+		ch_table = table_H[rch] || table_L[rch]; // 0x43x9 0x43x8
+		ch_line_count = line_count[rch]; // 0x43xA
+	}
+
+	get_D = get_D_reg;
+
+	reg_wr fi_ppu_to_mem;
+	any{
+		v_fetch.do | v_wdma.do : par{
+			fi_ppu_to_mem := ch_f_PPU_to_MEM;
+			ppu_to_mem = ch_f_PPU_to_MEM;
+		}
+		h_init_stg.do | h_fetch.do | h_nextadrs.do : par{
+			fi_ppu_to_mem := 0b0;
+			ppu_to_mem = 0b0;
+		}
+		else : ppu_to_mem = fi_ppu_to_mem;
+	}
+
+//if(read_wait.do & write) halt(0x23);
+
+%d regs_instruct definition
+/*
+	instruct reset_act par{
+		fi_h_initialling := 0b0;
+		fi_h_transfer := 0b0;
+		fi_h_nextadrs := 0b0;
+		par(i=0;i<8;i++){
+			v_run_ch[i]:=0b0; h_run_en[i]:=0b0; h_run_en_tmp[i]:=0b0; h_run_ch[i]:=0b0;
+		}
+	}
+*/
+	instruct io_set generate io_set_stg.do(ch_in, conf_in, set_D_in);
+
+	instruct io_get generate io_get_stg.do(ch_in, conf_in);
+
+	instruct v_start par(i=0;i<8;i++){ // $420B write
+		v_run_ch[i] := run_ch<i>;
+	}
+	// HDMAが無効なチャンネルを有効とする→NG
+	//	if(^h_run_en[i]) v_run_ch[i] := run_ch<i>; else v_run_ch[i] := 0b0; NG
+
+	// フレームの途中でdisableされる(バハムートラグーン)
+	// フレームの途中でenableされる(エナジーブレイカー)
+	instruct h_enable par(i=0;i<8;i++){
+		h_run_en[i] := run_ch<i>; h_run_en_tmp[i] := run_ch<i> & (^h_ended[i]);
+	}
+
+	// scanline==0,scanpixel早いうちくらいでHDMAを初期化
+	instruct h_init par{
+//if(io_set | io_get) halt(0x52);
+		if(v_running) v_rch_save := rch;
+		par(i=0;i<8;i++){
+			h_run_en_tmp[i]:=h_run_en[i]; do_transfer[i]:=0b0; h_ended[i]:=0b0;
+		}
+		any(i=0;i<8;i++){
+			h_run_en[i] : par{ table_L[i]:=adrs_MEM_L[i]; table_H[i]:=adrs_MEM_H[i]; }
+		}
+		par(i=0;i<8;i++){
+			h_run_ch[i] := h_run_en[i];
+		}
+		if(h_run_en_0 | h_run_en_1 | h_run_en_2 | h_run_en_3 |
+		   h_run_en_4 | h_run_en_5 | h_run_en_6 | h_run_en_7){
+			fi_h_initialling := 0b1;
+		}
+	}
+
+	instruct h_start par{
+		if(v_running) v_rch_save := rch;
+		par(i=0;i<8;i++){
+			h_run_ch[i] := h_run_en_tmp[i] & (^h_ended[i]);
+		}
+		alt{
+			(h_run_en_tmp_0 & do_transfer_0) | (h_run_en_tmp_1 & do_transfer_1) |
+			(h_run_en_tmp_2 & do_transfer_2) | (h_run_en_tmp_3 & do_transfer_3) |
+			(h_run_en_tmp_4 & do_transfer_4) | (h_run_en_tmp_5 & do_transfer_5) |
+			(h_run_en_tmp_6 & do_transfer_6) | (h_run_en_tmp_7 & do_transfer_7) : par{
+				fi_h_transfer := 0b1;
+			}
+			h_run_en_tmp_0 | h_run_en_tmp_1 | h_run_en_tmp_2 | h_run_en_tmp_3 |
+		    h_run_en_tmp_4 | h_run_en_tmp_5 | h_run_en_tmp_6 | h_run_en_tmp_7 : par{
+				fi_h_nextadrs := 0b1;
+			}
+		}
+	}
+
+	instruct run par{
+		alt{
+			fi_h_initialling : generate h_init_stg.do();
+			fi_h_transfer : par{
+				generate h_fetch.do();
+				generate h_store.do();
+			}
+			fi_h_nextadrs : generate h_nextadrs.do();
+			else : par{
+				if(v_running){
+					generate v_fetch.do();
+					generate v_store.do();
+				}
+			}
+		}
+	}
+
+	instruct halt h_code_reg := h_code;
+	f_halt = halt_code!=0x00;
+	halt_code = h_code_reg;
+
+	instruct read par{
+		read_req();
+		generate read_wait.do(rid);
+	}
+
+	instruct acc_MEM par{
+		sel adrs_add_sig<16>;
+		alt{
+			ch_f_fixed_MEM_adrs : adrs_add_sig = ch_adrs_MEM;
+			ch_f_incdec : adrs_add_sig = ch_adrs_MEM - 0x0001;
+			else        : adrs_add_sig = ch_adrs_MEM + 0x0001;
+		}
+		adrs_MEM_H[rch] := adrs_add_sig<15:8>;
+		adrs_MEM_L[rch] := adrs_add_sig< 7:0>;
+	}
+
+	instruct acc_PPU par{
+		switch(ch_transfar_type){
+		case 0: temp_PPU = ch_adrs_PPU;
+		case 1: temp_PPU = ch_adrs_PPU + (0b0000000 || trans<0>);
+		case 2: temp_PPU = ch_adrs_PPU;
+		case 3: temp_PPU = ch_adrs_PPU + (0b0000000 || trans<1>);
+		case 4: temp_PPU = ch_adrs_PPU + (0b000000 || trans);
+		case 5: temp_PPU = ch_adrs_PPU + (0b0000000 || trans<0>);
+		case 6: temp_PPU = ch_adrs_PPU;
+		case 7: temp_PPU = ch_adrs_PPU + (0b0000000 || trans<1>);
+		}
+	}
+
+	instruct acc_TAB par{
+		sel table_inc<16>;
+		table_inc = ch_table + 0x0001;
+		table_H[rch] := table_inc<15:8>;
+		table_L[rch] := table_inc< 7:0>;
+	}
+
+	stage io_set_stg {
+		finish;
+		switch(conf){
+		case 0x0 : par{ // $43x0
+			f_PPU_to_MEM[ch] := set_D<7>; // HDMAでも使用する？
+			f_indirect[ch] := set_D<6>; // HDMA Addressing Mode
+			r43x0_5[ch] := set_D<5>;
+			f_incdec[ch] := set_D<4>; // HDMAでは使用されない
+			f_fixed_MEM_adrs[ch] := set_D<3>; // HDMAでは使用されない
+			n_transfar_type[ch] := set_D<2:0>;
+		}
+		case 0x1 : par{
+			adrs_PPU[ch] := set_D;
+		}
+		case 0x2 : par{
+			adrs_MEM_L[ch] := set_D;
+		}
+		case 0x3 : par{
+			adrs_MEM_H[ch] := set_D;
+		}
+		case 0x4 : par{
+			bank_MEM[ch] := set_D;
+		}
+		case 0x5 : par{ // DMA:n_byte_L HDMA:ind_adrs_L 変化する
+			r43x5[ch] := set_D;
+		}
+		case 0x6 : par{ // DMA:n_byte_H HDMA:ind_adrs_H 変化する
+			r43x6[ch] := set_D;
+		}
+		case 0x7 : par{ // HDMA bank
+			ind_bank[ch] := set_D;
+		}
+		case 0x8 : par{ // HDMA table adrs 変化する
+			table_L[ch] := set_D;
+		}
+		case 0x9 : par{ // HDMA table adrs 変化する
+			table_H[ch] := set_D;
+		}
+		case 0xA : par{ // HDMA lines 変化する
+			line_count[ch] := set_D;
+		}
+	}}
+
+	stage io_get_stg {
+		finish;
+		switch(conf){
+		case 0x0 : par{
+			get_D_reg := f_PPU_to_MEM[ch] || f_indirect[ch] || r43x0_5[ch] ||
+				f_incdec[ch] || f_fixed_MEM_adrs[ch] || n_transfar_type[ch];
+		}
+		case 0x1 : par{ // 変化しない
+			get_D_reg := adrs_PPU[ch];
+		}
+		case 0x2 : par{ // 変化する
+			get_D_reg := adrs_MEM_L[ch];
+		}
+		case 0x3 : par{ // 変化する
+			get_D_reg := adrs_MEM_H[ch];
+		}
+		case 0x4 : par{ // 変化しない
+			get_D_reg := bank_MEM[ch];
+		}
+		case 0x5 : par{ // HDMA:ind_adrs_L 変化する
+			get_D_reg := r43x5[ch];
+		}
+		case 0x6 : par{ // HDMA:ind_adrs_H 変化する
+			get_D_reg := r43x6[ch];
+		}
+		case 0x7 : par{ // HDMA bank 変化しない
+			get_D_reg := ind_bank[ch];
+		}
+		case 0x8 : par{ // HDMA table adrs 変化する
+			get_D_reg := table_L[ch];
+		}
+		case 0x9 : par{ // HDMA table adrs 変化する
+			get_D_reg := table_H[ch];
+		}
+		case 0xA : par{ // HDMA lines 変化する
+			get_D_reg := line_count[ch];
+		}
+//		else : halt(0x57);
+	}}
+
+	stage v_fetch {
+		first_state st_begin;
+		finish;
+		state st_begin par{
+			alt(i=0;i<8;i++){
+				v_run_ch[i] : rch := i;
+			}
+			v_trans := 0b00;
+			goto st_read;
+		}
+		state st_read par{
+			if(ch_f_PPU_to_MEM){
+				read(READ_VD, 0x00, 0x21 || temp_PPU);
+				acc_PPU(v_trans);
+				v_trans++;
+			}
+			else{
+				read(READ_VD, ch_bank_MEM, ch_adrs_MEM);
+				acc_MEM();
+			}
+
+			lest_dec_sig = ch_bytes - 0x0001;
+			r43x5[rch] := lest_dec_sig< 7:0>;
+			r43x6[rch] := lest_dec_sig<15:8>;
+
+			if(ch_bytes==0x0001) goto st_wwait;
+		}
+		state st_wwait par{
+			any(i=0;i<8;i++){
+				rch==i : v_run_ch[i] := 0b0;
+			}
+			v_end();
+			goto st_begin;
+		}
+	}
+
+	stage v_store {
+		first_state st_begin;
+		finish;
+		state st_begin goto st_rwait;
+		state st_rwait goto st_write;
+		state st_write par{
+			if(ch_f_PPU_to_MEM){
+				write(ch_bank_MEM, ch_adrs_MEM, v_data);
+				acc_MEM();
+			}
+			else{
+				acc_PPU(v_trans);
+				write(0x00, 0x21 || temp_PPU, v_data);
+				v_trans++;
+			}
+			if(v_end) goto st_begin;
+		}
+	}
+
+	stage v_wdma {
+		reg_wr run_wdma_reg;
+		first_state st_begin;
+		par{
+			finish;
+			run_wdma = run_wdma_reg;
+		}
+		state st_begin par{
+			alt(i=0;i<8;i++){
+				v_run_ch[i] : rch := i;
+			}
+			run_wdma_reg := 0b1;
+			goto st_read;
+		}
+		state st_read par{
+			read(READ_VD, ch_bank_MEM, ch_adrs_MEM);
+			acc_MEM();
+
+			lest_dec_sig = ch_bytes - 0x0001;
+			r43x5[rch] := lest_dec_sig< 7:0>;
+			r43x6[rch] := lest_dec_sig<15:8>;
+
+			goto st_write;
+		}
+		state st_write par{
+			write(0x00, 0x2180, v_data);
+			if(ch_bytes==0x0000) goto st_end;
+			else goto st_read;
+		}
+		state st_end par{
+			any(i=0;i<8;i++){
+				rch==i : v_run_ch[i] := 0b0;
+			}
+			run_wdma_reg := 0b0;
+			goto st_begin;
+		}
+	}
+
+	stage h_init_stg {
+		first_state st_begin;
+		finish;
+		state st_begin par{
+			alt(i=0;i<8;i++){
+				h_run_ch[i] : par{ rch:=i; h_run_ch[i]:=0b0; goto st_nl; }
+				else : par{ fi_h_initialling:=0b0; if(v_running){ rch:=v_rch_save; } }
+			}
+		}
+		state st_nl par{
+			read(READ_NL, ch_bank_MEM, ch_table); // line_count[rch] := D_in
+			acc_TAB();
+			goto st_chk;
+		}
+		state st_chk par{
+			if(ch_line_count==0x00){
+				any(i=0;i<8;i++){
+					rch==i : par{ h_run_en_tmp[i]:=0b0; h_ended[i]:=0b1; }
+				}
+			//	goto st_begin;
+
+				alt(i=0;i<8;i++){ // クロック削減のため
+					h_run_ch[i] : par{ rch:=i; h_run_ch[i]:=0b0; goto st_nl; }
+					else : par{ fi_h_initialling:=0b0; if(v_running){ rch:=v_rch_save; } goto st_begin; }
+				}
+
+			}
+			else{
+				any(i=0;i<8;i++){
+					rch==i : do_transfer[i] := 0b1;
+				}
+				if(ch_f_indirect){
+					read(READ_INDL, ch_bank_MEM, ch_table);
+					acc_TAB();
+					goto st_ind;
+				}
+				else{
+				//	goto st_begin;
+
+					alt(i=0;i<8;i++){ // クロック削減のため
+						h_run_ch[i] : par{ rch:=i; h_run_ch[i]:=0b0; goto st_nl; }
+						else : par{ fi_h_initialling:=0b0; if(v_running){ rch:=v_rch_save; } goto st_begin; }
+					}
+
+				}
+			}
+		}
+		state st_ind par{
+			read(READ_INDH, ch_bank_MEM, ch_table);
+			acc_TAB();
+			goto st_begin;
+		}
+	}
+
+	stage h_fetch {
+	//	reg_wr wgo, h_count<2>;
+		sel ind_adrs_inc<16>;
+		first_state st_begin;
+		finish;
+		state st_begin par{
+			alt(i=0;i<8;i++){
+				h_run_ch[i] & do_transfer[i] : par{ rch:=i; do_transfer[i]:=0b0; goto st_read; }
+				else : par{ fi_h_transfer:=0b0; fi_h_nextadrs:=0b1; }
+			}
+			h_count := 0b00;
+			wgo := 0b0;
+			h_end();
+		}
+		state st_read par{
+			if(ch_f_indirect){
+				read(READ_HD, ch_ind_bank, ch_ind_adrs);
+				ind_adrs_inc = ch_ind_adrs + 0x0001;
+				r43x6[rch] := ind_adrs_inc<15:8>;
+				r43x5[rch] := ind_adrs_inc< 7:0>;
+			}
+			else{
+				read(READ_HD, ch_bank_MEM, ch_table);
+				acc_TAB();
+			}
+			switch(ch_transfar_type){
+				case 0: goto st_begin;
+				case 1: if(h_count<0>) goto st_begin;
+				case 2: if(h_count<0>) goto st_begin;
+				case 3: if(/&h_count) goto st_begin;
+				case 4: if(/&h_count) goto st_begin;
+				case 5: if(/&h_count) goto st_begin;
+				case 6: if(h_count<0>) goto st_begin;
+				case 7: if(/&h_count) goto st_begin;
+			}
+			h_count++;
+			wgo := 0b1;
+		}
+	}
+
+	stage h_store {
+		reg_wr h_trans<2>;
+		first_state st_begin;
+		finish;
+		state st_begin par{
+			h_trans := 0b00;
+			goto st_write;
+		}
+		state st_write par{
+			if(wgo){
+				acc_PPU(h_trans);
+				write(0x00, 0x21 || temp_PPU, h_data);
+				h_trans++;
+			}
+			if(h_end) goto st_begin;
+		}
+	}
+
+	stage h_nextadrs {
+		sel ch_line_count_dec<8>;
+		first_state st_begin;
+		finish;
+		state st_begin par{
+			alt(i=0;i<8;i++){
+				h_run_ch[i] : par{ rch:=i; h_run_ch[i]:=0b0; goto st_countdec; }
+				else : par{ fi_h_nextadrs:=0b0; if(v_running){ rch:=v_rch_save; } }
+			}
+		}
+		state st_countdec par{
+			ch_line_count_dec = ch_line_count - 0x01;
+			line_count[rch] := ch_line_count_dec;
+			if(ch_line_count_dec<6:0>==0b0000000){
+				read(READ_NL, ch_bank_MEM, ch_table); // line_count[rch] := D_in
+				acc_TAB();
+				goto st_chk;
+			}
+			else{
+				any(i=0;i<8;i++){
+					rch==i : do_transfer[i] := ch_line_count_dec<7>;
+				}
+			//	goto st_begin;
+
+				alt(i=0;i<8;i++){ // クロック削減のため
+					h_run_ch[i] : par{ rch:=i; h_run_ch[i]:=0b0; }
+					else : par{ fi_h_nextadrs:=0b0; if(v_running){ rch:=v_rch_save; } goto st_begin; }
+				}
+
+			}
+		}
+		state st_chk par{
+			if(ch_line_count==0x00){
+				any(i=0;i<8;i++){
+					rch==i : par{ h_run_en_tmp[i]:=0b0; h_ended[i]:=0b1; /*do_transfer[i]:=0b0;*/ }
+				}
+			//	goto st_begin;
+
+				alt(i=0;i<8;i++){ // クロック削減のため
+					h_run_ch[i] : par{ rch:=i; h_run_ch[i]:=0b0; goto st_countdec; }
+					else : par{ fi_h_nextadrs:=0b0; if(v_running){ rch:=v_rch_save; } goto st_begin; }
+				}
+
+			}
+			else{
+				any(i=0;i<8;i++){
+					rch==i : do_transfer[i] := 0b1;
+				}
+				if(ch_f_indirect){
+					read(READ_INDL, ch_bank_MEM, ch_table);
+					acc_TAB();
+					goto st_ind;
+				}
+				else{
+				//	goto st_begin;
+
+					alt(i=0;i<8;i++){ // クロック削減のため
+						h_run_ch[i] : par{ rch:=i; h_run_ch[i]:=0b0; goto st_countdec; }
+						else : par{ fi_h_nextadrs:=0b0; if(v_running){ rch:=v_rch_save; } goto st_begin; }
+					}
+
+				}
+			}
+		}
+		state st_ind par{
+			read(READ_INDH, ch_bank_MEM, ch_table);
+			acc_TAB();
+			goto st_begin;
+		}
+	}
+
+	stage read_wait {
+		if(read_ack){
+			any{
+				rid_reg==READ_VD   : v_data := D_in;
+				rid_reg==READ_NL   : line_count[rch] := D_in;
+				rid_reg==READ_INDL : r43x5[rch] := D_in;
+				rid_reg==READ_INDH : r43x6[rch] := D_in;
+				rid_reg==READ_HD   : h_data := D_in;
+			}
+			finish;
+		}
+	}
+
+}

@@ -1,0 +1,51 @@
+
+// Adder 4 bit (BCD)
+
+%i "cpa4.h"
+%i "csa4.h"
+
+circuit cpa4_bcd
+{
+	input in1<4>, in2<4>, cin, bcd;
+	output out1<4>, gout, pout, v;
+	instrin add(in1, in2, cin, bcd);
+	instrin sub(in1, in2, cin, bcd);
+
+	sel d1<4>, d2<4>;
+	sel bin<4>, b4, conv, cry;
+	cpa4 cpa;
+	csa4 csa;
+
+	bin = cpa.con(d1, d2, cin).out1;
+	gout = cpa.gout | b4;
+	pout = cpa.pout;
+	cry  = gout | (cin & pout);
+	/* if (bcd) binary --> bcd */
+	conv = (^cry) & bcd;
+	out1 = ((bin<3> & ^conv) | (conv & bin<3> & bin<2> & bin<1>))
+	    || ((bin<2> & ^conv) | (conv & (bin<2> @ bin<1>)))
+	    ||  (bin<1> @ conv)
+	    ||   bin<0>;
+	v = cpa.v;
+	csa.con(in1, in2, 0x6);
+
+	instruct add par{
+		any{
+			bcd : par{   /* if (bcd && add) binary += 6 */
+				d1 = csa.out1;
+				d2 = csa.out2<2:0> || 0b0;
+				b4 = csa.out2<3>;
+			}
+			else : par{
+				d1 = in1;
+				d2 = in2;
+				b4 = 0b0;
+			}
+		}
+	}
+	instruct sub par{
+		d1 = in1;
+		d2 = ^in2;
+		b4 = 0b0;
+	}
+}

@@ -1,0 +1,12 @@
+
+// Carry Save Adder 4 bit
+
+circuit csa4
+{
+	input in1<4>, in2<4>, in3<4>;
+	output out1<4>, out2<4>;
+	instrin con(in1, in2, in3);
+
+	out1 = in1 @ in2 @ in3;
+	out2 = (in1 & in2) | (in2 & in3) | (in3 & in1);
+}

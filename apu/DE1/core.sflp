@@ -1,0 +1,470 @@
+
+/*
+	SPC Player on FPGA feat. DE1
+	Copyright (c) 2004-2008 pgate1
+*/
+
+//%i "../../../../DE1/DE1.h"
+%i "../../../../DE1/seg7_ctrl.h"
+%i "../../../../DE1/sram_ctrl.h"
+//%i "../../../../DE1/sdram_ctrl.h"
+%i "../../../../DE1/dac_ctrl.h"
+%i "../../../../DE1/sdcard_ctrl.h"
+%i "../../../../hdl/fat16.h"
+%i "../../../../hdl/pspad_ctrl.h"
+%i "../../../../DE1/vjtag_uart.h"
+
+%i "../apu_core.h"
+//%i "../../../../hdl/dsdac.h"
+%i "../../../../hdl/dsdac7.h"
+%i "../../../../hdl/chat_mask.h"
+%i "../DDS_50to1024000.h"
+
+circuit core
+{
+	input KEY<4>, SW<10>;
+	chat_mask kcmask_0, kcmask_1, kcmask_2, kcmask_3;
+	sela key[4];
+	output LEDR<10>, LEDG<8>;
+	seg7_ctrl seg7_0, seg7_1, seg7_2, seg7_3;
+	output HEX0<7>, HEX1<7>, HEX2<7>, HEX3<7>;
+	sel seg<16>;
+	input UART_RXD;  // UART Receiver
+	output UART_TXD; // UART Transmitter
+//--------------------- SRAM Interface ---------------------
+// 参考 adrs<18> data<16>
+	sram_ctrl sram;
+	output SRAM_CEn, SRAM_OEn, SRAM_WEn;
+	output SRAM_LBn, SRAM_UBn, SRAM_DEn;
+	output SRAM_ADDR<18>;
+	input  SRAM_Din<16>;
+	output SRAM_Dout<16>;
+//--------------------- SDRAM Interface --------------------
+// 参考 bank<2> adrs<20> data<16>
+/*
+	sdram_ctrl sdram;
+	output SDRAM_CSn, SDRAM_WEn, SDRAM_DEn;
+	output SDRAM_RASn, SDRAM_CASn;
+	output SDRAM_BA<2>, SDRAM_ADDR<12>;
+	output SDRAM_LDQM, SDRAM_UDQM;
+	input  SDRAM_Din<16>;
+	output SDRAM_Dout<16>;
+*/
+//--------------------- VGA --------------------------------
+/*
+	VGA_ctrl vga;
+	output VGA_HS, VGA_VS;
+	output VGA_R<4>, VGA_G<4>, VGA_B<4>;
+	reg_wr red_out_reg<4>, grn_out_reg<4>, blu_out_reg<4>;
+	reg_wr clock25M_div;
+	Display dis;
+	reg_ws dis_timing;
+*/
+//--------------------- Audio ------------------------
+	dac_ctrl dac;
+	input audio_RD;
+	output audio_DATA<32>;
+//	instrout audio_SET;
+//	output audio_VOL<7>;
+//--------------------- SD_Card Interface ------------------
+	output SD_CSn; // SD Card CSn
+	output SD_CLK; // SD Card Clock
+	output SD_CMD; // SD Card Command & Dout
+	input  SD_DAT; // SD Card Data
+	sdcard_ctrl sdcard;
+	fat16 fat;
+/*
+//--------------------- PS PAD ------------------------
+//	PSPAD_ctrl pad;
+	output PAD_SEL1n, PAD_SEL2n, PAD_CLK, PAD_CMD;
+	input PAD_ACKn, PAD_DAT;
+	sel psw_pad<8>;
+//------------------ SNES APU -------------------------
+	output APU_RSTn, APU_CLK, APU_WEn, APU_RDn, APU_DEn;
+	output APU_A<2>, APU_Dout<8>;
+	input APU_Din<8>;
+*/
+//-------------------------------------------------
+//	dsdac dac_L, dac_R;
+//	output DAC_L, DAC_R;
+
+	vjtag_uart vjtag;
+
+	reg_ws reset;
+
+	reg_wr pA<16>, spc_read_ok;
+	reg_wr init_wait<22>, music_num<8>;
+
+	// APU
+	apu_core apu;
+	DDS_50to1024000 dds;
+
+	dsdac7 ledac_0, ledac_1, ledac_2, ledac_3, ledac_4, ledac_5, ledac_6, ledac_7, ledac_8, ledac_9;
+	mem led_reg[10]<7>;
+	mem volcount[10]<7>;
+
+//	stage_name vol { task up(); task down(); }
+	stage_name key_seek { task next(); task back(); }
+	stage_name card2ram { task do(); }
+	stage_name vjtag2ram { task do(); }
+//	stage_name clk500k { task do(); }
+//	stage_name key_get { task do(); }
+
+	if(reset){
+		reset := 0b0;
+	//	audio_SET(); // 音量セット
+		generate card2ram.do();
+	//	generate clk500k.do();
+	//	generate key_get.do();
+	}
+
+	SRAM_CEn = sram.CEn;
+	SRAM_OEn = sram.OEn;
+	SRAM_WEn = sram.WEn;
+	SRAM_LBn = sram.LBn;
+	SRAM_UBn = sram.UBn;
+	SRAM_DEn = sram.DEn;
+	SRAM_ADDR = sram.ADDR;
+	sram.Din = SRAM_Din;
+	SRAM_Dout = sram.Dout;
+
+	SD_CSn = sdcard.CSn;
+	SD_CLK = sdcard.CLK;
+	SD_CMD = sdcard.CMD;
+	sdcard.DAT = SD_DAT;
+
+	fat.sack = sdcard.ack;
+	fat.sdata = sdcard.rdata;
+
+	UART_TXD = 0b1; // LED消灯の為
+
+	par(i=0;i<4;i++){
+		kcmask[i].kin = ^KEY<i>; key[i] = kcmask[i].kout;
+	}
+
+	alt{
+		^spc_read_ok : par{
+			HEX3 = seg7_3.con(pA<15:12>).oSEG;
+			HEX2 = seg7_2.con(pA<11: 8>).oSEG;
+			HEX1 = seg7_1.con(pA< 7: 4>).oSEG;
+			HEX0 = seg7_0.con(pA< 3: 0>).oSEG;
+		}
+		/|apu.f_halt : par{
+			HEX1 = seg7_1.con(seg< 7: 4>).oSEG;
+			HEX0 = seg7_0.con(seg< 3: 0>).oSEG;
+		}
+		else : par{
+			HEX3 = apu.disp_freq_0;
+			HEX2 = apu.disp_freq_1;
+			HEX1 = apu.disp_freq_2;
+			HEX0 = apu.disp_freq_3;
+		}
+/*
+		else : par{
+			HEX3 = seg7_3.con(seg<15:12>).oSEG;
+			HEX2 = seg7_2.con(seg<11: 8>).oSEG;
+			HEX1 = seg7_1.con(seg< 7: 4>).oSEG;
+			HEX0 = seg7_0.con(seg< 3: 0>).oSEG;
+		}
+*/
+	}
+/*
+	PAD_SEL1n = pad.seln;
+	PAD_SEL2n = 0b1;
+	PAD_CLK = pad.clk;
+	PAD_CMD = pad.cmd;
+	pad.data = PAD_DAT;
+*/
+	apu.D_in = sram.rdata<7:0>;
+
+	if(^spc_read_ok) apu.ready();
+	if(sram.ack | apu.ready) apu.ack();
+
+	// ソフトリセット
+//	if(^(pad.data1Pcur<0>|pad.data1Pcur<3>|/|pad.data1Pref<3:2>)){
+//		snes.RESET_in();
+//	}
+
+	apu.mute = SW<0> || SW<1> || SW<2> || SW<3> ||
+	           SW<4> || SW<5> || SW<6> || SW<7>;
+//	if(SW<8>) apu.sw_intpl_off();
+//	if(SW<8>) apu.sw_echo_off();
+//	if(SW<8>) apu.sw_brrmul_off();
+
+//	snes.speed = ^pad.data1Pref<0>;
+//	snes.stop  = ^pad.data1Pref<1>;
+
+	sel sound_R_n<17>;
+	sel sound_L<18>, sound_R<18>;
+	if(SW<9>){ // 逆位相サラウンド、apu.sound_R<17bit>であること。<16bit>だとうまくいかない
+		sound_L = 18#apu.sound_L;
+		sound_R_n = (^apu.sound_R) + 1;
+		sound_R = 18#sound_R_n;
+	}
+	else{
+		sound_L = 18#apu.sound_L;
+		sound_R = 18#apu.sound_R;
+	}
+	reg_wr out_L_reg<32>, out_R_reg<32>;
+	out_L_reg := (21#sound_L) || 0b00000000000;
+	out_R_reg := (21#sound_R) || 0b00000000000;
+	dac.data_L = out_L_reg;
+	dac.data_R = out_R_reg;
+	dac.RD = audio_RD;
+	audio_DATA = dac.Dout;
+
+	alt{
+		^spc_read_ok : LEDG = 0;
+		/|apu.f_halt & key_2 : LEDG = apu.ir_out;
+		else : LEDG = apu.disp_vold<0> || apu.disp_vold<1> || apu.disp_vold<2> || apu.disp_vold<3>
+		           || apu.disp_vold<4> || apu.disp_vold<5> || apu.disp_vold<6> || apu.disp_vold<7>;
+	}
+
+	par(i=0;i<10;i++){
+		ledac[i].DACin = led_reg[i];
+	}
+
+	alt{
+		^spc_read_ok : LEDR = 0;
+		/|apu.f_halt : LEDR = 0b0000000 || apu.f_halt;
+		else : LEDR = ledac_9.DACout || ledac_8.DACout || ledac_7.DACout || ledac_6.DACout || ledac_5.DACout
+		           || ledac_4.DACout || ledac_3.DACout || ledac_2.DACout || ledac_1.DACout 
+		           || (ledac_0.DACout /*| /|pad.data_cur | /|pad.data_ref*/);
+	}
+
+	sel vol_L<18>, vol_R<18>;
+	if(out_L_reg<31>) vol_L = ^out_L_reg<27:10>;
+	else              vol_L =  out_L_reg<27:10>;
+	if(out_R_reg<31>) vol_R = ^out_R_reg<27:10>;
+	else              vol_R =  out_R_reg<27:10>;
+
+	sel disp_vol<19>;
+	disp_vol = (0b0||vol_L) + (0b0||vol_R);
+
+	// LED表示でも使用
+	reg_wr samprate<10>;
+	samprate++;
+	if(/&samprate){
+		reg_wr volrate<7>;
+		if(volrate==0b1111000){
+			par(i=0;i<10;i++){
+				led_reg[i] := volcount[i];
+			}
+			par(i=0;i<10;i++){
+				volcount[i] := 0;
+			}
+			volrate := 0;
+		}
+		else{
+			if(disp_vol<18>)      volcount[0]++;
+			if(/|disp_vol<18:17>) volcount[1]++;
+			if(/|disp_vol<18:16>) volcount[2]++;
+			if(/|disp_vol<18:15>) volcount[3]++;
+			if(/|disp_vol<18:14>) volcount[4]++;
+			if(/|disp_vol<18:13>) volcount[5]++;
+			if(/|disp_vol<18:12>) volcount[6]++;
+			if(/|disp_vol<18:11>) volcount[7]++;
+			if(/|disp_vol<18:10>) volcount[8]++;
+			if(/|disp_vol<18: 9>) volcount[9]++;
+			volrate++;
+		}
+	}
+
+	alt{
+		apu.ready : seg = pA<15:0>;
+		key_3 : seg = 0x00 || apu.halt_code;
+		else : seg = 0x00||apu.dbg;//apu.pc_out;
+	}
+
+	alt{
+		key_2 /*| pad.data_ref<0>*/ : par{ // 進む
+			generate key_seek.next();
+		}
+		key_1 /*| pad.data_ref<1>*/ : par{ // 戻る
+			generate key_seek.back();
+		}
+	}
+/*
+	if(key_3) any{
+		SW<0> : generate vol.down();
+		SW<1> : generate vol.up();
+	}
+*/
+
+	// 1.024MHz
+	instruct dds.run par{
+		// SPC700 core
+		if(spc_read_ok) apu.spc_run();
+
+		// APUタイマ 64kHz
+		reg_wr timer_timing<4>;
+		timer_timing++;
+		if(/&timer_timing){ // 16分周
+			if(spc_read_ok) apu.timer_run();
+		}
+
+		// DSP 128kHz (32kHz×4)
+		reg_wr dsp_timing<3>;
+		dsp_timing++;
+		if(/&dsp_timing){ // 8分周
+// 動かしておかないと曲切り替え時にノイズが乗る
+			/*if(spc_read_ok)*/ apu.dsp_run();
+		}
+	}
+
+	instruct apu.read_mem_req par{
+		sram.read(0b00||apu.A);
+	}
+
+	instruct apu.write_mem_req par{
+		sram.write(0b00||apu.A, 0x00||apu.D_out);
+	}
+
+	instruct fat.sread par{
+		sdcard.read(fat.sadrs);
+	}
+
+	instruct vjtag.recv par{
+		generate vjtag2ram.do();
+	}
+
+	stage key_seek {
+		first_state iwait;
+		state iwait par{
+			spc_read_ok := 0b0;
+			apu.set_play(0x6C, 0x80); // key off
+			init_wait++;
+			if(/&init_wait) goto st1;
+		}
+		state st1 par{
+			any{
+				key_seek.next : music_num++;
+				key_seek.back : music_num--;
+			}
+			generate card2ram.do();
+			goto st2;
+		}
+		state st2 if(^card2ram.do){
+		//	if((key_seek.next & ^key_2) | (key_seek.back & ^key_1)){
+			if((key_seek.next & (^key_2) /*& (^pad.data_ref<0>)*/)
+			 | (key_seek.back & (^key_1) /*& (^pad.data_ref<1>)*/)){
+				goto iwait;
+				finish;
+			}
+		}
+	}
+
+	stage card2ram {
+		first_state st_open;
+		state st_open if(fat.ack){
+			spc_read_ok := 0b0;
+			apu.soft_reset();
+			fat.fopen(music_num);
+			pA := 0;
+			goto st_spcr;
+		}
+		state st_spcr if(fat.ack){
+			fat.read();
+			goto st_spcw;
+		}
+		state st_spcw if(fat.ack){
+			fat.read();
+			// APUレジスタなど256バイトコピー
+			// 0x20 - 0x2F -> 0xE0 - 0xEF
+			if(pA<7:4>==0x2) apu.set_play(0xE || pA<3:0>, fat.fdata);
+			if(/&pA<7:0>){
+				pA := 0;
+				goto st_memw;
+			}
+			else pA++;
+		}
+		state st_memw if(fat.ack & sram.ack){
+			fat.read();
+			// WRAMを0x10000(65536)バイトコピー
+			// 0x00F0 - 0x00FF
+			if(pA<15:4>==0x00F) apu.set_play(0xF || pA<3:0>, fat.fdata);
+			// 0x0000 - 0xFFFF
+			sram.write(0b00||pA, 0x00||fat.fdata);
+			pA++;
+			if(/&pA) goto st_dspw;
+		}
+		state st_dspw if(fat.ack){
+			fat.read();
+			// DSPレジスタなど128バイトコピー
+			// 0x00 - 0x7F
+			apu.set_play(0b0||pA<6:0>, fat.fdata);
+			pA++;
+			if(/&pA<6:0>) goto st_end;
+		}
+		state st_end par{
+			spc_read_ok := 0b1;
+			goto st_open;
+			finish;
+		}
+	}
+
+	stage vjtag2ram {
+		first_state st_init;
+		finish;
+		state st_init par{
+			spc_read_ok := 0b0;
+			apu.set_play(0x6C, 0x80); // key off
+			goto st_recv;
+		}
+		state st_recv par{
+			apu.soft_reset();
+			pA := 0;
+			goto st_spcw;
+		}
+		state st_spcw par{
+			// APUレジスタなど256バイトコピー
+			// 0x20 - 0x2F -> 0xE0 - 0xEF
+			if(pA<7:4>==0x2) apu.set_play(0xE || pA<3:0>, vjtag.recv_data);
+			if(/&pA<7:0>){
+				pA := 0;
+				goto st_memw;
+			}
+			else pA++;
+		}
+		state st_memw if(sram.ack){
+			// WRAMを0x10000(65536)バイトコピー
+			// 0x00F0 - 0x00FF
+			if(pA<15:4>==0x00F) apu.set_play(0xF || pA<3:0>, vjtag.recv_data);
+			// 0x0000 - 0xFFFF
+			sram.write(0b00||pA, 0x00||vjtag.recv_data);
+			pA++;
+			if(/&pA) goto st_dspw;
+		}
+		state st_dspw par{
+			// DSPレジスタなど128バイトコピー
+			// 0x00 - 0x7F
+			apu.set_play(pA<7:0>, vjtag.recv_data);
+			pA++;
+			if(/&pA<6:0>) goto st_end;
+		}
+		state st_end par{
+			spc_read_ok := 0b1;
+			goto st_init;
+		}
+	}
+/*
+	stage clk500k {
+		reg_wr count500k<7>;
+		par{
+			if(/|count500k) count500k--;
+			else{
+				pad.clock_500k();
+				count500k := 0b1100011;	// 100-1
+			}
+		}
+	}
+
+	stage key_get {
+		reg_wr kcount<20>;
+		par{
+			kcount++;
+			if(/&kcount) pad.key_get();
+		}
+	}
+*/
+}

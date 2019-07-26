@@ -1,0 +1,20 @@
+
+// Adder 8 bit
+
+circuit add_8
+{
+	input din1<8>, din2<8>, cin;
+	output dout<8>, cout;
+	instrin con(din1, din2, cin);
+
+	sel b_base<8>, calc_a<9>, calc_sel<9>;
+
+	calc_a = (0b0||din1) + (0x00||cin);
+	calc_sel = calc_a + (0b0||b_base);
+
+	instruct con par{
+		b_base = din2;
+		dout = calc_sel<7:0>;
+		cout = calc_sel<8>;
+	}
+}

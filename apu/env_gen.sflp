@@ -1,0 +1,259 @@
+
+%i "mem/env_table.h"
+
+%d ST_NONE 0b0000
+%d ST_ATTK 0b0001
+%d ST_DECY 0b0010
+%d ST_SUST 0b0011
+%d ST_RLSE 0b0100
+%d ST_GAIN 0b1000
+%d ST_DECL 0b1100
+%d ST_DECE 0b1101
+%d ST_INCL 0b1110
+%d ST_INCB 0b1111
+
+circuit env_gen
+{
+	instrin set_ADSR1, set_ADSR2, set_GAIN;
+	input ADSR1<8>, ADSR2<8>, GAIN<8>;
+
+	instrin key_on, key_off;
+	output eout<7>;
+	instrin tim32kHz;
+
+output dbg<8>;
+
+	reg_wr f_key_on, f_key_off;
+
+	reg_wr envx<11>;
+	reg_wr count<12>;
+
+	reg_wr adsr_state<4>;
+	sel gen_state<4>;
+	reg_wr tim<16>;
+	sel arsel<5>, srsel<5>;
+//	sel artim<12>, drtim<12>, srtim<12>;
+	instrself arinf, srinf;
+
+	env_table etable;
+	sel eadrs<7>;
+
+	instrself hi_up;
+
+	stage_name make_tim { task do(); }
+	stage_name resolv_count { task do(); }
+	stage_name envelope_generator { task do(); }
+
+	alt{
+		ADSR1<7> | f_key_off : gen_state = adsr_state;
+		f_key_on : switch(GAIN<7:5>){
+			case 0b110: gen_state = ST_INCL;
+			case 0b111: gen_state = ST_INCB;
+			case 0b100: gen_state = ST_DECL;
+			case 0b101: gen_state = ST_DECE;
+			default   : gen_state = ST_GAIN;
+		}
+		else : gen_state = ST_NONE;
+	}
+
+	// アタック & Decrease Mode linear & Increase Mode linear
+	// Decrease Mode linear と Increase Mode linearのテーブルの中に
+	// アタックも含まれている。最後の0b1で判別。
+	if(ADSR1<7>) arsel = ADSR1<3:0>||0b1;
+	else         arsel = GAIN<4:0>;
+	// time = artim x 128分割
+	switch(arsel){
+	case 0b00000: arinf();
+	}
+
+	// サスティン & Decrease Mode exponential
+	if(ADSR1<7>) srsel = ADSR2<4:0>;
+	else         srsel = GAIN<4:0>;
+	switch(srsel){
+	case 0b00000: srinf();
+	}
+
+	any{
+		(gen_state==ST_ATTK) | (gen_state==ST_DECL) | 
+		(gen_state==ST_INCL) | (gen_state==ST_INCB) : par{
+			eadrs = 0b00 || arsel;
+		}
+		gen_state==ST_DECY : par{
+			eadrs = 0b010_0 || ADSR1<6:4>;
+		}
+		(gen_state==ST_SUST) | (gen_state==ST_DECE) : par{
+			eadrs = 0b10 || srsel;
+		}
+	}
+	etable.read(eadrs);
+
+	// FF4で急峻アタックが必要(ノートOn時のGAINセットに間に合うように)
+	if((gen_state==ST_ATTK) & (ADSR1<3:0>==0xF)) hi_up();
+
+	eout = envx<10:4>;
+
+dbg = 0x0 || gen_state;
+
+	instruct set_ADSR1 par{
+		// DQ6の町のテーマでスタッカート
+		tim := 0x0000;
+	}
+
+	instruct set_ADSR2 par{
+		tim := 0x0000;
+	}
+
+	instruct set_GAIN par{
+		tim := 0x0000;
+	}
+
+	instruct tim32kHz par{
+		if(f_key_on | f_key_off /*& (^key_on) & (^key_off)*/) generate make_tim.do();
+	}
+
+	instruct key_on par{
+		f_key_on  := 0b1;
+		f_key_off := 0b0;
+		tim := 0x0000;
+		count := 0x001; // アタックが127までなので
+		// envxは後発優先
+		envx := 0b00000000000;
+		adsr_state := ST_ATTK;
+	}
+
+	instruct key_off par{
+		f_key_on  := 0b0;
+		f_key_off := 0b1;
+		adsr_state := ST_RLSE;
+	}
+
+	stage make_tim {
+		par{
+			finish;
+			any{
+				(gen_state==ST_ATTK) | (gen_state==ST_DECL) | (gen_state==ST_INCL) : alt{
+					arinf : ;
+					tim<10:0>==etable.dout<10:0> : par{
+						generate resolv_count.do();
+						generate envelope_generator.do();
+						tim := 0;
+					}
+					else : tim++;
+				}
+				gen_state==ST_DECY : any{
+					tim<8:0>==etable.dout<8:0> : par{
+						generate resolv_count.do();
+						generate envelope_generator.do();
+						tim := 0;
+					}
+					else : tim++;
+				}
+				(gen_state==ST_SUST) | (gen_state==ST_DECE) : alt{
+					srinf : ;
+					tim<11:0>==etable.dout<11:0> : par{
+						generate resolv_count.do();
+						generate envelope_generator.do();
+						tim := 0;
+					}
+					else : tim++;
+				}
+				gen_state==ST_RLSE : par{ // すばやくリリース
+						generate resolv_count.do();
+						generate envelope_generator.do();
+				}
+				(gen_state==ST_INCB) : alt{
+					arinf : ;
+					tim<10:3>==etable.dout<10:3> : par{
+						generate envelope_generator.do();
+						tim := 0;
+					}
+					else : tim++;
+				}
+				gen_state==ST_GAIN : par{
+						generate envelope_generator.do();
+				}
+			}
+		}
+	}
+
+	stage resolv_count {
+		par{
+			finish;
+			switch(gen_state){
+				case ST_ATTK: par{
+					if(
+						(hi_up & (count<1:0>==0b10)) | // 急峻アタック
+						(/&count<6:0>) ){ // 128 通常アタック
+						count := 0;
+						adsr_state := ST_DECY;
+					}
+					else count++;
+				}
+				case ST_DECY: par{
+					if(eout<6:4>==ADSR2<7:5>){
+						count := 0;
+						adsr_state := ST_SUST;
+					}
+				}
+				case ST_SUST: par{
+					if(/&count<8:0>){ // 512
+						count := 0;
+						adsr_state := ST_RLSE;
+					}
+					else count++;
+				}
+				case ST_RLSE: par{
+					// リリースはカウントしない
+					count++; // 参考までにカウント
+				}
+			}
+		}
+	}
+
+	stage envelope_generator {
+		par{
+			finish;
+			any{
+				gen_state==ST_ATTK : par{
+					if(hi_up) any{
+						count<1:0>==0b01 : envx += 0b1000000_0000;
+						count<1:0>==0b10 : envx += 0b0111111_0000;
+					}
+					else if(eout!=127) envx += 0b0000001_0000;
+				}
+				gen_state==ST_DECY : par{
+					// 127から1より小さい値を引くので0になることは無い
+					// SustainLevelまで下げる
+					if(eout!=0) envx -= (envx >> 8);
+				}
+				(gen_state==ST_SUST) | (gen_state==ST_DECE) : par{
+					if(eout!=0) envx -= ((envx >> 8) + 0b0000000_0001);
+				}
+				(gen_state==ST_RLSE) : par{
+					if(eout!=0) envx -= 0b0000001_0000;
+					else{
+						f_key_on  := 0b0;
+						f_key_off := 0b0;
+					}
+				}
+
+				(gen_state==ST_DECL) : par{
+					if(eout!=0) envx -= 0b0000001_0000; // 引き切れていない？
+				}
+				(gen_state==ST_INCL) : par{
+					if(eout!=127) envx += 0b0000001_0000;
+				}
+				(gen_state==ST_INCB) : par{
+					if(eout!=127) any{
+						(eout<6:5>==0b11) : envx += 0b0000000_0100;
+						else              : envx += 0b0000001_0000;
+					}
+				}
+				gen_state==ST_GAIN : par{
+					envx := GAIN<6:0> || 0b0000;
+				}
+			}
+		}
+	}
+
+}

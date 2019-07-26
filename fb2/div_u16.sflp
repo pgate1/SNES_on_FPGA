@@ -1,0 +1,46 @@
+/*
+	符号なし16÷8＝16…16ビット除算
+*/
+%i "../fb/add_16.h"
+
+circuit div_u16
+{
+	input a<16>, b<8>;
+	output q<16>, r<16>, ack;
+	instrin set(a, b);
+
+	instrself run;
+	reg_wr dr<8>, zr<32>, count<4>;
+	reg_ws ack_reg;
+	add_16 add;
+
+	add.con(zr<30:15>, ^(0x00||dr), 0b1);
+
+	if(^ack_reg){
+		run();
+		if(count==0xF) ack_reg := 0b1;
+	}
+	ack = ack_reg;
+
+	q = zr<15:0>;
+	r = zr<31:16>;
+
+	instruct set par{
+		dr := b;
+		zr := 0x0000 || a;
+		count := 0x0;
+		ack_reg := 0b0;
+	}
+
+	instruct run par{
+		if(add.cout){ // 引ける場合
+			zr := add.dout || zr<14:0> || 0b1;
+		}
+		else{ // 引けない場合
+			zr := zr<30:0> || 0b0;
+		}
+
+		count++;
+	}
+
+}

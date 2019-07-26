@@ -1,0 +1,1206 @@
+
+%i "vram_ctrl.h"
+%i "cgram_256.h"
+%i "bg.h"
+%i "obj_core.h"
+%i "mode7.h"
+%i "../fb2/mul_s16.h"
+%i "window.h"
+%i "colormath.h"
+
+circuit ppu1_core
+{
+	input A<6>, D_in<8>;
+	output D_out<8>;
+	reg_wr Dout_reg<8>;
+	instrin read_io(A), write_io(A, D_in);
+
+	instrin draw, hsync;
+	input scanline<9>, vblank, hblank;
+	reg_wr scanline_latch<9>;
+	instrin vblank_begin, vblank_end;
+	output f_overscan;
+	reg_wr f_overscan_reg;
+	input open_bus<8>;
+
+	output VRAM_ADDR<15>, VRAM_Din<16>;
+	input VRAM_Dout<16>, VRAM_ACK;
+	instrout VRAM_RD, VRAM_WE;
+
+	/* VIDEO */
+	output R<5>, G<5>, B<5>;
+	instrout VIDEO_enable;
+
+	output f_halt, halt_code<8>;
+output dbg<16>;
+
+	reg_ws reset;
+	instrself reset_act;
+
+	instrself halt(h_code);
+	sel h_code<8>;
+	reg_wr h_code_reg<8>;
+
+	sel Aio<8>;
+
+	vram_ctrl vram;
+
+	reg_ws f_forceblanking, f_forceblanking_v;
+	reg_wr n_brightness<4>;
+	reg_wr f_vadrs_hl, vadrs_inc<8>;
+
+	sel vram_adrs<15>, vram_adrs_remap<15>;
+	reg_wr r2116_vaL<8>, r2117_vaH<7>;
+	sel vram_adrs_s<15>;
+	instrself vram_adrs_next, make_vram_adrs(vram_adrs_s);
+	reg_wr vadrs_remap<2>;
+
+	reg_wr bgsc_low<8>;
+	reg_wr bg_hsync;
+
+	cgram_256 main_cgram, sub_cgram;
+	reg_wr read_cgram_ack;
+
+	bg bg1;
+	reg_wr bg1_tile_base<5>, bg1_sc_size<2>, bg1_tile_size;
+	reg_wr bg1_mosaic_enable, bg1_chr_base<3>;
+	reg_wr bg1_h_scroll<13>, bg1_v_scroll<13>;
+	reg_wr bg1_main_enable, bg1_sub_enable;
+	bg bg2;
+	reg_wr bg2_tile_base<5>, bg2_sc_size<2>, bg2_tile_size;
+	reg_wr bg2_mosaic_enable, bg2_chr_base<3>;
+	reg_wr bg2_h_scroll<10>, bg2_v_scroll<10>;
+	reg_wr bg2_main_enable, bg2_sub_enable;
+	bg bg3;
+	reg_wr bg3_tile_base<5>, bg3_sc_size<2>, bg3_tile_size;
+	reg_wr bg3_mosaic_enable, bg3_chr_base<3>;
+	reg_wr bg3_h_scroll<10>, bg3_v_scroll<10>;
+	reg_wr bg3_main_enable, bg3_sub_enable;
+	bg bg4;
+	reg_wr bg4_tile_base<5>, bg4_sc_size<2>, bg4_tile_size;
+	reg_wr bg4_mosaic_enable, bg4_chr_base<3>;
+	reg_wr bg4_h_scroll<10>, bg4_v_scroll<10>;
+	reg_wr bg4_main_enable, bg4_sub_enable;
+	reg_wr mosaic_size<4>;
+	obj_core obj;
+	reg_wr obj_size<3>, obj_name_select<2>, obj_name_base<2>;
+	reg_wr f_obj_priority_rotation;
+	reg_wr obj_adrs<10>;
+	reg_wr obj_main_enable, obj_sub_enable;
+	reg_wr r2102_oaL<8>, r2103_oaH;
+	mode7 md7;
+	reg_wr md7_empspace, md7_empfill, md7_v_flip, md7_h_flip;
+	reg_wr md7_rA<16>, md7_rB<16>, md7_rC<16>, md7_rD<16>;
+	reg_wr md7_rot<8>; // temp
+	reg_wr md7_cX<13>, md7_cY<13>;
+
+	reg_wr read_oam_ack<2>;
+
+	reg_wr bg_mode<3>;//, bg_mode_tmp<3>;
+	reg_wr scantile<6>, vx<9>;
+	reg_wr f_bg3_pri;//, f_bg3_pri_tmp;
+
+	reg_wr obj_searching, obj_fetching;
+
+	instrself make_col;
+
+	reg_wr r211B_mA<16>, r211C_mB<16>;
+	mul_s16 muls16;
+
+	input f_latched_count_en;
+	instrin hv_count_latch;
+	instrself hv_count_latch_s;
+	reg_wr latched_h_count<9>, latched_v_count<9>;
+	reg_wr f_external_latch, vx_add<9>;
+	reg_ws fi_hc_flip, fi_vc_flip;
+
+	window bg1_win;
+	reg_wr bg1_win_en1, bg1_win_en2, bg1_win_io1, bg1_win_io2, bg1_win_logic<2>;
+	reg_wr bg1_main_mask_enable, bg1_sub_mask_enable;
+	window bg2_win;
+	reg_wr bg2_win_en1, bg2_win_en2, bg2_win_io1, bg2_win_io2, bg2_win_logic<2>;
+	reg_wr bg2_main_mask_enable, bg2_sub_mask_enable;
+	window bg3_win;
+	reg_wr bg3_win_en1, bg3_win_en2, bg3_win_io1, bg3_win_io2, bg3_win_logic<2>;
+	reg_wr bg3_main_mask_enable, bg3_sub_mask_enable;
+	window bg4_win;
+	reg_wr bg4_win_en1, bg4_win_en2, bg4_win_io1, bg4_win_io2, bg4_win_logic<2>;
+	reg_wr bg4_main_mask_enable, bg4_sub_mask_enable;
+	window obj_win;
+	reg_wr obj_win_en1, obj_win_en2, obj_win_io1, obj_win_io2, obj_win_logic<2>;
+	reg_wr obj_main_mask_enable, obj_sub_mask_enable;
+	window col_win;
+	reg_wr col_win_en1, col_win_en2, col_win_io1, col_win_io2, col_win_logic<2>;
+	reg_wr win1_left<8>, win1_right<8>, win2_left<8>, win2_right<8>;
+
+	reg_wr force_black<2>, prevent_math<2>, f_subscreen_math;
+	reg_wr f_direct_color;
+	reg_wr bg1_colmath_enable, bg2_colmath_enable;
+	reg_wr bg3_colmath_enable, bg4_colmath_enable;
+	reg_wr obj_colmath_enable, back_colmath_enable;
+	reg_wr f_half_colmath, f_colmath_op;
+	reg_wr fixedcol_B<5>, fixedcol_G<5>, fixedcol_R<5>;
+
+	reg_wr f_ExtBG, f_pH512;
+
+	reg_wr fi_sub_col_id, fi_screen_math;
+	sel main_col<15>;
+	reg_wr m_z_reg<3>;
+
+	instrself screen_math;
+	colormath colmath_R, colmath_G, colmath_B;
+
+	reg_wr f_frameflip;
+
+	reg_wr open_bus1<8>, open_bus2<8>;
+
+	reg_wr dbg_reg<16>;
+
+	stage_name BG_MEM { task do(); }
+	stage_name BG_DRAW { task do(); }
+
+	if(0b0){
+		bg1.ofsH_read();
+		bg1.ofsV_read();
+		bg2.ofsH_read();
+		bg2.ofsV_read();
+		bg4.ofsH_read();
+		bg4.ofsV_read();
+		bg2.pat45_read();
+		bg2.pat67_read();
+		bg3.pat23_read();
+		bg3.pat45_read();
+		bg3.pat67_read();
+		bg4.pat23_read();
+		bg4.pat45_read();
+		bg4.pat67_read();
+		sub_cgram.read();
+	}
+
+	if(reset){
+		reset := 0b0;
+		reset_act();
+	}
+
+	Aio = 0b00 || A;
+
+	VRAM_ADDR = vram.ADDR;
+	VRAM_Din = vram.D_out;
+	vram.D_in = VRAM_Dout;
+	vram.RD_ACK = VRAM_ACK;
+	if(vram.RD) VRAM_RD();
+	if(vram.WE) VRAM_WE();
+
+	any{
+		read_io : Dout_reg := D_out;
+		read_oam_ack<0> : par{
+			any{
+				read_oam_ack<1> : D_out = obj.D_out<15:8>;
+				else            : D_out = obj.D_out< 7:0>;
+			}
+			Dout_reg := D_out;
+			read_oam_ack := 0b00;
+			open_bus1 := D_out;
+		}
+		read_cgram_ack : par{
+			D_out = main_cgram.D_out<7:0>;
+			Dout_reg := D_out;
+			read_cgram_ack := 0b0;
+			open_bus2 := D_out;
+		}
+		else : D_out = Dout_reg;
+	}
+
+	switch(bg_mode){
+	case 0: par{ // mode 0
+		bg1.col_depth = 0b01; // 4
+		bg2.col_depth = 0b01; // 4
+		bg3.col_depth = 0b01; // 4
+		bg4.col_depth = 0b01; // 4
+	}
+	case 1: par{ // mode 1
+		bg1.col_depth = 0b10; // 16
+		bg2.col_depth = 0b10; // 16
+		bg3.col_depth = 0b01; // 4
+		bg4.col_depth = 0b00;
+	}
+	case 2: par{ // mode 2
+		bg1.col_depth = 0b10; // 16
+		bg2.col_depth = 0b10; // 16
+		bg3.col_depth = 0b00;
+		bg4.col_depth = 0b00;
+	}
+	case 3: par{ // mode 3
+		bg1.col_depth = 0b11; // 256
+		bg2.col_depth = 0b10; // 16
+		bg3.col_depth = 0b00;
+		bg4.col_depth = 0b00;
+	}
+	case 4: par{ // mode 4
+		bg1.col_depth = 0b11; // 256
+		bg2.col_depth = 0b01; // 4
+		bg3.col_depth = 0b00;
+		bg4.col_depth = 0b00;
+	}
+	case 5: par{ // mode 5
+		bg1.col_depth = 0b10; // 16
+		bg2.col_depth = 0b01; // 4
+		bg3.col_depth = 0b00;
+		bg4.col_depth = 0b00;
+	}
+	case 6: par{ // mode 6
+		bg1.col_depth = 0b10; // 16
+		bg2.col_depth = 0b00;
+		bg3.col_depth = 0b00;
+		bg4.col_depth = 0b00;
+	}
+	case 7: par{ // mode 7
+		bg1.col_depth = 0b00;
+		bg2.col_depth = 0b00;
+		bg3.col_depth = 0b00;
+		bg4.col_depth = 0b00;
+	}
+	}
+
+	bg1.id = 0b00;
+	bg1.bg_mode = bg_mode;
+	bg1.h_scroll = bg1_h_scroll<9:0>; bg1.v_scroll = bg1_v_scroll<9:0>;
+	bg1.tile_base = bg1_tile_base; bg1.sc_size   = bg1_sc_size;
+	bg1.tile_size = bg1_tile_size; bg1.chr_base  = bg1_chr_base;
+	bg1.read_ack = vram.ack; bg1.D_in = vram.rdata;
+	bg1.scanline = scanline<7:0>; bg1.scantile = scantile;
+	bg1.vdot = vx<2:0>;
+	bg1.bg3_Hval = bg3.Hval; bg1.bg3_Vval = bg3.Vval;
+	bg1.mosaic_size = mosaic_size;
+	bg1.mosaic_enable = bg1_mosaic_enable;
+
+	bg2.id = 0b01;
+	bg2.bg_mode = bg_mode;
+	bg2.h_scroll = bg2_h_scroll; bg2.v_scroll = bg2_v_scroll;
+	bg2.tile_base = bg2_tile_base; bg2.sc_size   = bg2_sc_size;
+	bg2.tile_size = bg2_tile_size; bg2.chr_base  = bg2_chr_base;
+	bg2.read_ack = vram.ack; bg2.D_in = vram.rdata;
+	bg2.scanline = scanline<7:0>; bg2.scantile = scantile;
+	bg2.vdot = vx<2:0>;
+	bg2.bg3_Hval = bg3.Hval; bg2.bg3_Vval = bg3.Vval;
+	bg2.mosaic_size = mosaic_size;
+	bg2.mosaic_enable = bg2_mosaic_enable;
+
+	bg3.id = 0b10;
+	bg3.bg_mode = 0b000;
+	bg3.h_scroll = bg3_h_scroll; bg3.v_scroll = bg3_v_scroll;
+	bg3.tile_base = bg3_tile_base; bg3.sc_size   = bg3_sc_size;
+	bg3.tile_size = bg3_tile_size; bg3.chr_base  = bg3_chr_base;
+	bg3.read_ack = vram.ack; bg3.D_in = vram.rdata;
+	bg3.scanline = scanline<7:0>; bg3.scantile = scantile;
+	bg3.vdot = vx<2:0>;
+	bg3.bg3_Hval = 0x0000; bg3.bg3_Vval = 0x0000;
+	bg3.mosaic_size = mosaic_size;
+	bg3.mosaic_enable = bg3_mosaic_enable;
+
+	bg4.id = 0b11;
+	bg4.bg_mode = 0b000;
+	bg4.h_scroll = bg4_h_scroll; bg4.v_scroll = bg4_v_scroll;
+	bg4.tile_base = bg4_tile_base; bg4.sc_size   = bg4_sc_size;
+	bg4.tile_size = bg4_tile_size; bg4.chr_base  = bg4_chr_base;
+	bg4.read_ack = vram.ack; bg4.D_in = vram.rdata;
+	bg4.scanline = scanline<7:0>; bg4.scantile = scantile;
+	bg4.vdot = vx<2:0>;
+	bg4.bg3_Hval = 0x0000; bg4.bg3_Vval = 0x0000;
+	bg4.mosaic_size = mosaic_size;
+	bg4.mosaic_enable = bg4_mosaic_enable;
+
+	obj.size = obj_size;
+	obj.scanline = scanline<7:0>;
+	obj.name_select = obj_name_select;
+	obj.name_base = obj_name_base;
+	obj.priority_rotation = f_obj_priority_rotation;
+	obj.read_ack = vram.ack;
+	obj.oam_adrs = obj_adrs<8:2>;
+	obj.D_in = vram.rdata;
+	obj.forceblanking = f_forceblanking;
+
+	md7.f_empspace = md7_empspace; md7.f_empfill = md7_empfill;
+	md7.f_v_flip = md7_v_flip;
+	md7.f_h_flip = md7_h_flip;
+	md7.h_scroll = bg1_h_scroll; md7.v_scroll = bg1_v_scroll;
+	md7.rotA = md7_rA; md7.rotB = md7_rB;
+	md7.rotC = md7_rC; md7.rotD = md7_rD;
+	md7.cX = md7_cX; md7.cY = md7_cY;
+	md7.read_ack = vram.ack;
+	md7.D_in = vram.rdata;
+	md7.scanline = scanline<7:0>;
+	md7.f_direct_color = f_direct_color;
+	md7.f_ExtBG = f_ExtBG;
+
+	vram_adrs = r2117_vaH || r2116_vaL;
+
+	if(bg_mode==0){
+		bg1.palette_offset = 0b00;
+		bg2.palette_offset = 0b01;
+		bg3.palette_offset = 0b10;
+		bg4.palette_offset = 0b11;
+	}
+	else{
+		bg1.palette_offset = 0b00;
+		bg2.palette_offset = 0b00;
+		bg3.palette_offset = 0b00;
+		bg4.palette_offset = 0b00;
+	}
+
+	muls16.con(r211B_mA, 16#(r211C_mB<15:8>));
+
+	f_overscan = f_overscan_reg;
+
+	bg1_win.con(bg1_win_en1, bg1_win_en2, bg1_win_io1, bg1_win_io2, bg1_win_logic,
+		win1_left, win1_right, win2_left, win2_right,
+		bg1_main_mask_enable, bg1_sub_mask_enable);
+	bg1_win.x = vx<7:0>;
+
+	bg2_win.con(bg2_win_en1, bg2_win_en2, bg2_win_io1, bg2_win_io2, bg2_win_logic,
+		win1_left, win1_right, win2_left, win2_right,
+		bg2_main_mask_enable, bg2_sub_mask_enable);
+	bg2_win.x = vx<7:0>;
+
+	bg3_win.con(bg3_win_en1, bg3_win_en2, bg3_win_io1, bg3_win_io2, bg3_win_logic,
+		win1_left, win1_right, win2_left, win2_right,
+		bg3_main_mask_enable, bg3_sub_mask_enable);
+	bg3_win.x = vx<7:0>;
+
+	bg4_win.con(bg4_win_en1, bg4_win_en2, bg4_win_io1, bg4_win_io2, bg4_win_logic,
+		win1_left, win1_right, win2_left, win2_right,
+		bg4_main_mask_enable, bg4_sub_mask_enable);
+	bg4_win.x = vx<7:0>;
+
+	obj_win.con(obj_win_en1, obj_win_en2, obj_win_io1, obj_win_io2, obj_win_logic,
+		win1_left, win1_right, win2_left, win2_right,
+		obj_main_mask_enable, obj_sub_mask_enable);
+	obj_win.x = vx<7:0>;
+
+	col_win.con(col_win_en1, col_win_en2, col_win_io1, col_win_io2, col_win_logic,
+		win1_left, win1_right, win2_left, win2_right,
+		0b1, 0b0);
+	col_win.x = vx<7:0>;
+
+	instruct reset_act par{
+
+	}
+
+	instruct halt h_code_reg := h_code;
+	f_halt = halt_code!=0x00;
+	halt_code = h_code_reg;
+
+	instruct make_vram_adrs par{
+		switch(vadrs_remap){
+		case 0b00: vram_adrs_remap = vram_adrs_s;
+		case 0b01: vram_adrs_remap = vram_adrs_s<14: 8> || vram_adrs_s<4:0> || vram_adrs_s<7:5>;
+		case 0b10: vram_adrs_remap = vram_adrs_s<14: 9> || vram_adrs_s<5:0> || vram_adrs_s<8:6>;
+		case 0b11: vram_adrs_remap = vram_adrs_s<14:10> || vram_adrs_s<6:0> || vram_adrs_s<9:7>;
+		}
+	}
+
+	instruct vram_adrs_next par{
+		sel va_add_sig<15>;
+		va_add_sig = vram_adrs + (0b0000000||vadrs_inc);
+		r2116_vaL := va_add_sig< 7:0>;
+		r2117_vaH := va_add_sig<14:8>;
+	}
+
+	instruct write_io any{
+		Aio==0x00 : par{
+			// 即時 ok：アウターワールド
+			// temp ok：ヴァルケン,(バハムートラグーンOPのスプライト)
+			f_forceblanking := D_in<7>;
+			n_brightness := D_in<3:0>;
+		}
+		Aio==0x01 : par{
+			obj_size := D_in<7:5>;
+			obj_name_select := D_in<4:3>;
+			obj_name_base := D_in<1:0>; // bit2=0 ?
+		}
+		Aio==0x02 : par{
+			obj_adrs := r2103_oaH || D_in || 0b0;
+			r2102_oaL := D_in;
+		}
+		Aio==0x03 : par{
+			obj_adrs := D_in<0> || r2102_oaL || 0b0;
+			f_obj_priority_rotation := D_in<7>;
+			r2103_oaH := D_in<0>;
+		}
+		Aio==0x04 : par{
+			obj.oam_write(obj_adrs, D_in);
+			if(obj_adrs==(0b10||0x1F)) obj_adrs := (0b00||0x00);
+			else obj_adrs++;
+		}
+		Aio==0x05 : par{
+			bg_mode := D_in<2:0>;
+			f_bg3_pri := D_in<3:0>==0b1001; // BG Mode==1
+			bg1_tile_size := D_in<4>; bg2_tile_size := D_in<5>;
+			bg3_tile_size := D_in<6>; bg4_tile_size := D_in<7>;
+		}
+		Aio==0x06 : par{
+			mosaic_size := D_in<7:4>;
+			bg4_mosaic_enable := D_in<3>; bg3_mosaic_enable := D_in<2>;
+			bg2_mosaic_enable := D_in<1>; bg1_mosaic_enable := D_in<0>;
+			if(mosaic_size != D_in<7:4>){
+				bg1.mos_reset(); bg2.mos_reset();
+				bg3.mos_reset(); bg4.mos_reset();
+			}
+		}
+		Aio==0x07 : par{
+			bg1_tile_base := D_in<6:2>;
+			bg1_sc_size := D_in<1:0>;
+		}
+		Aio==0x08 : par{
+			bg2_tile_base := D_in<6:2>;
+			bg2_sc_size := D_in<1:0>;
+		}
+		Aio==0x09 : par{
+			bg3_tile_base := D_in<6:2>;
+			bg3_sc_size := D_in<1:0>;
+		}
+		Aio==0x0A : par{
+			bg4_tile_base := D_in<6:2>;
+			bg4_sc_size := D_in<1:0>;
+		}
+		Aio==0x0B : par{
+			bg1_chr_base := D_in<2:0>;
+			bg2_chr_base := D_in<6:4>;
+		}
+		Aio==0x0C : par{
+			bg3_chr_base := D_in<2:0>;
+			bg4_chr_base := D_in<6:4>;
+		}
+		Aio==0x0D : par{
+			bg1_h_scroll := D_in<4:0> || bgsc_low;
+			bgsc_low := D_in;
+		}
+		Aio==0x0E : par{
+			bg1_v_scroll := D_in<4:0> || bgsc_low;
+			bgsc_low := D_in;
+		}
+		Aio==0x0F : par{
+			bg2_h_scroll := D_in<1:0> || bgsc_low;
+			bgsc_low := D_in;
+		}
+		Aio==0x10 : par{
+			bg2_v_scroll := D_in<1:0> || bgsc_low;
+			bgsc_low := D_in;
+		}
+		Aio==0x11 : par{
+			bg3_h_scroll := D_in<1:0> || bgsc_low;
+			bgsc_low := D_in;
+		}
+		Aio==0x12 : par{
+			bg3_v_scroll := D_in<1:0> || bgsc_low;
+			bgsc_low := D_in;
+		}
+		Aio==0x13 : par{
+			bg4_h_scroll := D_in<1:0> || bgsc_low;
+			bgsc_low := D_in;
+		}
+		Aio==0x14 : par{
+			bg4_v_scroll := D_in<1:0> || bgsc_low;
+			bgsc_low := D_in;
+		}
+		Aio==0x15 : par{
+			f_vadrs_hl := D_in<7>;
+			vadrs_remap := D_in<3:2>;
+			switch(D_in<1:0>){
+			case 0b00 : vadrs_inc := 0x01; // 1
+			case 0b01 : vadrs_inc := 0x20; // 32
+			case 0b10 : vadrs_inc := 0x80; // 128 ok
+			case 0b11 : vadrs_inc := 0x80; // 128
+			}
+		}
+		Aio==0x16 : par{
+			r2116_vaL := D_in;
+			make_vram_adrs(r2117_vaH || D_in);
+		//	if(vblank | f_forceblanking){
+				vram.read(vram_adrs_remap||0b0); // Low read
+		//	}
+		}
+		Aio==0x17 : par{
+			r2117_vaH := D_in<6:0>;
+			make_vram_adrs(D_in<6:0> || r2116_vaL);
+		//	if(vblank | f_forceblanking){
+				vram.read(vram_adrs_remap||0b1); // High read
+		//	}
+		}
+		Aio==0x18 : par{
+			make_vram_adrs(vram_adrs);
+			if(vblank | f_forceblanking){
+				vram.write(vram_adrs_remap||0b0, D_in); // Low write
+				if(^f_vadrs_hl) vram_adrs_next();
+			}
+		}
+		Aio==0x19 : par{
+			make_vram_adrs(vram_adrs);
+			if(vblank | f_forceblanking){
+				vram.write(vram_adrs_remap||0b1, D_in); // High write
+				if(f_vadrs_hl) vram_adrs_next();
+			}
+		}
+		Aio==0x1A : par{ // Mode 7 setting
+			md7_empspace := D_in<7>;
+			md7_empfill := D_in<6>;
+			md7_v_flip := D_in<1>;
+			md7_h_flip := D_in<0>;
+		}
+		Aio==0x1B : par{
+			r211B_mA := D_in || md7_rot;
+			md7_rA := D_in || md7_rot;
+			md7_rot := D_in;
+		}
+		Aio==0x1C : par{
+			r211C_mB := D_in || md7_rot;
+			md7_rB := D_in || md7_rot;
+			md7_rot := D_in;
+		}
+		Aio==0x1D : par{
+			md7_rC := D_in || md7_rot;
+			md7_rot := D_in;
+		}
+		Aio==0x1E : par{
+			md7_rD := D_in || md7_rot;
+			md7_rot := D_in;
+		}
+		Aio==0x1F : par{
+			md7_cX := D_in<4:0> || md7_rot;
+			md7_rot := D_in;
+		}
+		Aio==0x20 : par{
+			md7_cY := D_in<4:0> || md7_rot;
+			md7_rot := D_in;
+		}
+		Aio==0x21 : par{
+			if(vblank | hblank | f_forceblanking){
+				main_cgram.set(D_in);
+				sub_cgram.set(D_in);
+			}
+		}
+		Aio==0x22 : par{
+			if(vblank | hblank | f_forceblanking){
+				main_cgram.write(D_in);
+				sub_cgram.write(D_in);
+			}
+		}
+		Aio==0x23 : par{ // BG1,2 win io en
+			bg1_win_io1 := D_in<0>; bg1_win_en1 := D_in<1>;
+			bg1_win_io2 := D_in<2>; bg1_win_en2 := D_in<3>;
+			bg2_win_io1 := D_in<4>; bg2_win_en1 := D_in<5>;
+			bg2_win_io2 := D_in<6>; bg2_win_en2 := D_in<7>;
+		}
+		Aio==0x24 : par{ // BG3,4 win io en
+			bg3_win_io1 := D_in<0>; bg3_win_en1 := D_in<1>;
+			bg3_win_io2 := D_in<2>; bg3_win_en2 := D_in<3>;
+			bg4_win_io1 := D_in<4>; bg4_win_en1 := D_in<5>;
+			bg4_win_io2 := D_in<6>; bg4_win_en2 := D_in<7>;
+		}
+		Aio==0x25 : par{ // OBJ,COL win io en
+			obj_win_io1 := D_in<0>; obj_win_en1 := D_in<1>;
+			obj_win_io2 := D_in<2>; obj_win_en2 := D_in<3>;
+			col_win_io1 := D_in<4>; col_win_en1 := D_in<5>;
+			col_win_io2 := D_in<6>; col_win_en2 := D_in<7>;
+		}
+		Aio==0x26 : win1_left  := D_in;
+		Aio==0x27 : win1_right := D_in;
+		Aio==0x28 : win2_left  := D_in;
+		Aio==0x29 : win2_right := D_in;
+		Aio==0x2A : par{ // win logic
+			bg1_win_logic := D_in<1:0>; bg2_win_logic := D_in<3:2>;
+			bg3_win_logic := D_in<5:4>; bg4_win_logic := D_in<7:6>;
+		}
+		Aio==0x2B : par{ // win logic
+			obj_win_logic := D_in<1:0>;
+			col_win_logic := D_in<3:2>;
+		}
+		Aio==0x2C : par{ // main enable
+			bg1_main_enable := D_in<0>; bg2_main_enable := D_in<1>;
+			bg3_main_enable := D_in<2>; bg4_main_enable := D_in<3>;
+			obj_main_enable := D_in<4>;
+		}
+		Aio==0x2D : par{ // sub enable
+			bg1_sub_enable := D_in<0>; bg2_sub_enable := D_in<1>;
+			bg3_sub_enable := D_in<2>; bg4_sub_enable := D_in<3>;
+			obj_sub_enable := D_in<4>;
+		}
+		Aio==0x2E : par{ // main mask enable
+			bg1_main_mask_enable := D_in<0>; bg2_main_mask_enable := D_in<1>;
+			bg3_main_mask_enable := D_in<2>; bg4_main_mask_enable := D_in<3>;
+			obj_main_mask_enable := D_in<4>;
+		}
+		Aio==0x2F : par{ // sub mask enable
+			bg1_sub_mask_enable := D_in<0>; bg2_sub_mask_enable := D_in<1>;
+			bg3_sub_mask_enable := D_in<2>; bg4_sub_mask_enable := D_in<3>;
+			obj_sub_mask_enable := D_in<4>;
+		}
+		Aio==0x30 : par{
+			force_black := D_in<7:6>;
+			prevent_math := D_in<5:4>;
+			f_subscreen_math := D_in<1>;
+			f_direct_color := D_in<0>;
+		}
+		Aio==0x31 : par{ // colmath_enable
+			bg1_colmath_enable := D_in<0>; bg2_colmath_enable := D_in<1>;
+			bg3_colmath_enable := D_in<2>; bg4_colmath_enable := D_in<3>;
+			obj_colmath_enable := D_in<4>; back_colmath_enable := D_in<5>;
+			f_half_colmath := D_in<6>; f_colmath_op := D_in<7>;
+		}
+		Aio==0x32 : par{
+			if(D_in<7>) fixedcol_B := D_in<4:0>;
+			if(D_in<6>) fixedcol_G := D_in<4:0>;
+			if(D_in<5>) fixedcol_R := D_in<4:0>;
+		}
+		Aio==0x33 : par{ // Screen Init Ex
+			f_ExtBG := D_in<6>;
+			f_pH512 := D_in<3>;
+			f_overscan_reg := D_in<2>;
+		}
+		// 以降は無効書き込み 0x34 - 0x3F;
+		else : ; //halt(0x01);
+	}
+
+	instruct read_io any{
+		Aio<7:4>==0x0 : D_out = open_bus1;
+		Aio<7:4>==0x1 : D_out = open_bus1;
+		Aio<7:4>==0x2 : D_out = open_bus1;
+		Aio==0x34 : par{
+			D_out = muls16.dout<7:0>;
+			open_bus1 := D_out;
+		}
+		Aio==0x35 : par{
+			D_out = muls16.dout<15:8>;
+			open_bus1 := D_out;
+		}
+		Aio==0x36 : par{
+			D_out = muls16.dout<23:16>;
+			open_bus1 := D_out;
+		}
+		Aio==0x37 : par{ // HVcounter Soft Latch
+			if(f_latched_count_en) hv_count_latch_s();
+			D_out = open_bus;
+		}
+		Aio==0x38 : par{ // Read Data From Oam
+			obj.oam_read(obj_adrs);
+			if(obj_adrs==(0b10||0x1F)) obj_adrs := (0b00||0x00);
+			else obj_adrs++;
+			read_oam_ack := obj_adrs<0> || 0b1;
+		}
+		Aio==0x39 : par{
+			D_out = vram.rdata<7:0>;
+			make_vram_adrs(vram_adrs);
+			if(^f_vadrs_hl){
+				vram.read(vram_adrs_remap||0b0); // Low read
+				vram_adrs_next();
+			}
+			open_bus1 := D_out;
+		}
+		Aio==0x3A : par{
+			D_out = vram.rdata<15:8>;
+			make_vram_adrs(vram_adrs);
+			if(f_vadrs_hl){
+				vram.read(vram_adrs_remap||0b1); // High read
+				vram_adrs_next();
+			}
+			open_bus1 := D_out;
+		}
+		Aio==0x3B : par{ // read CG ram
+			if(vblank | hblank | f_forceblanking){ // お試し
+				main_cgram.read();
+				read_cgram_ack := 0b1;
+			}
+		}
+		Aio==0x3C : par{
+			// H Counter Data by External Or Software Latch
+			if(fi_hc_flip) D_out = latched_h_count<7:0>;
+			else D_out = open_bus2<7:1> || latched_h_count<8>;
+			fi_hc_flip := ^fi_hc_flip;
+			open_bus2 := D_out;
+		}
+		Aio==0x3D : par{
+			// V Counter Data by External Or Software Latch
+			if(fi_vc_flip) D_out = latched_v_count<7:0>;
+			else D_out = open_bus2<7:1> || latched_v_count<8>;
+			fi_vc_flip := ^fi_vc_flip;
+			open_bus2 := D_out;
+		}
+		Aio==0x3E : par{
+			// <3:0> 5c77 Version Number
+			D_out = obj.time_over || obj.range_over || 0b0 || open_bus1<4> || 0x1;
+			open_bus1 := D_out;
+		}
+		Aio==0x3F : par{
+			// Nintendo S-PPU2 Version Number 5C78-01
+			D_out = f_frameflip || f_external_latch || open_bus2<5> || 0b0 || 0x3;
+			f_external_latch := 0b0;
+			fi_hc_flip := 0b1;
+			fi_vc_flip := 0b1;
+			open_bus2 := D_out;
+		}
+		else : D_out = open_bus; //halt(0x02);
+	}
+
+	instruct hv_count_latch hv_count_latch_s();
+	instruct hv_count_latch_s par{
+		// vx -17 ～ -1 → +340
+		latched_h_count := vx + vx_add;
+		latched_v_count := scanline_latch;
+		f_external_latch := 0b1;
+	}
+
+	// clk 0
+	instruct hsync par{
+		bg_hsync := 0b1;
+		bg1.hsync(); bg2.hsync();
+		bg3.hsync(); bg4.hsync();
+		obj.hsync(); md7.hsync();
+
+		f_forceblanking_v := f_forceblanking;
+	//	bg_mode := bg_mode_tmp;
+	//	f_bg3_pri := f_bg3_pri_tmp;
+	}
+
+	// clk 1
+	instruct vblank_begin par{
+		if(^f_forceblanking){
+			obj_adrs := r2103_oaH || r2102_oaL || 0b0; // obj_adrs_saved
+		}
+		obj.vblank_begin();
+	}
+
+	// clk 1
+	instruct vblank_end par{
+		bg1.vblank_end();
+		bg2.vblank_end();
+		bg3.vblank_end();
+		bg4.vblank_end();
+		obj.vblank_end();
+		f_frameflip := ^f_frameflip;
+	}
+
+	// clk 0
+	instruct draw par{
+		if(vblank | f_forceblanking_v){
+		//	generate VBLANK.do();
+		}
+		else{
+			generate BG_MEM.do();
+			if(obj_searching) obj.search();
+			if(obj_fetching) obj.fetch();
+		}
+		generate BG_DRAW.do();
+	}
+
+	instruct bg1.read_req if(^(vblank | f_forceblanking)) vram.read(bg1.A||0b0);
+	instruct bg2.read_req if(^(vblank | f_forceblanking)) vram.read(bg2.A||0b0);
+	instruct bg3.read_req if(^(vblank | f_forceblanking)) vram.read(bg3.A||0b0);
+	instruct bg4.read_req if(^(vblank | f_forceblanking)) vram.read(bg4.A||0b0);
+	instruct obj.read_req if(^(vblank | f_forceblanking)) vram.read(obj.A||0b0);
+	instruct md7.read_req if(^(vblank | f_forceblanking)) vram.read(0b0||md7.A||0b0);
+
+	instruct make_col par{
+
+//		sel bg3_front;
+//		if(f_bg3_pri & bg3.col_pri) bg3_front = 0b1;
+//		else bg3_front = 0b0;
+
+		sel main_col_id<8>, m_z<3>;
+		any{
+			(bg_mode==0) | (bg_mode==1) : alt{
+				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & bg3.col_pri & f_bg3_pri  : par{ main_col_id=bg3.col_id; m_z=0b011; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11)      : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & bg1.col_pri              : par{ main_col_id=bg1.col_id; m_z=0b001; }
+				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & bg2.col_pri              : par{ main_col_id=bg2.col_id; m_z=0b010; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10)      : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & (^bg1.col_pri)           : par{ main_col_id=bg1.col_id; m_z=0b001; }
+				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & (^bg2.col_pri)           : par{ main_col_id=bg2.col_id; m_z=0b010; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01)      : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & bg3.col_pri & ^f_bg3_pri : par{ main_col_id=bg3.col_id; m_z=0b011; }
+				bg4_main_enable & bg4_win.main_maskn & bg4.col_enable & bg4.col_pri              : par{ main_col_id=bg4.col_id; m_z=0b100; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00)      : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & (^bg3.col_pri)           : par{ main_col_id=bg3.col_id; m_z=0b011; }
+				bg4_main_enable & bg4_win.main_maskn & bg4.col_enable & (^bg4.col_pri)           : par{ main_col_id=bg4.col_id; m_z=0b100; }
+				else : par{ main_col_id = 0x00; m_z = 0b000; }
+			}
+			bg_mode==7 : alt{ // mode7
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11) : par{ main_col_id=obj.col_id; m_z=0b101; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10) : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg2_main_enable & bg2_win.main_maskn & md7.ext_col_en & md7.ext_pri         : par{ main_col_id=md7.ext_col_id; m_z=0b010; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01) : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg1_main_enable & bg1_win.main_maskn & md7.col_enable                       : par{ main_col_id=md7.col_id; m_z=0b001; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00) : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg2_main_enable & bg2_win.main_maskn & md7.ext_col_en & (^md7.ext_pri)      : par{ main_col_id=md7.ext_col_id; m_z=0b010; }
+				else : par{ main_col_id = 0x00; m_z = 0b000; }
+			}
+			else : alt{ // mode 2,3,4,5,6
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11) : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & bg1.col_pri         : par{ main_col_id=bg1.col_id; m_z=0b001; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10) : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & bg2.col_pri         : par{ main_col_id=bg2.col_id; m_z=0b010; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01) : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & (^bg1.col_pri)      : par{ main_col_id=bg1.col_id; m_z=0b001; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00) : par{ main_col_id=obj.col_id; m_z=0b101; }
+				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & (^bg2.col_pri)      : par{ main_col_id=bg2.col_id; m_z=0b010; }
+				else : par{ main_col_id = 0x00; m_z = 0b000; }
+			}
+		}
+		m_z_reg := m_z;
+
+		sel sub_col_id<8>;
+		any{
+			(bg_mode==0) | (bg_mode==1) : alt{
+				bg3_sub_enable & bg3_win.sub_maskn & bg3.col_enable & bg3.col_pri & f_bg3_pri  : sub_col_id = bg3.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b11)      : sub_col_id = obj.col_id;
+				bg1_sub_enable & bg1_win.sub_maskn & bg1.col_enable & bg1.col_pri              : sub_col_id = bg1.col_id;
+				bg2_sub_enable & bg2_win.sub_maskn & bg2.col_enable & bg2.col_pri              : sub_col_id = bg2.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b10)      : sub_col_id = obj.col_id;
+				bg1_sub_enable & bg1_win.sub_maskn & bg1.col_enable & (^bg1.col_pri)           : sub_col_id = bg1.col_id;
+				bg2_sub_enable & bg2_win.sub_maskn & bg2.col_enable & (^bg2.col_pri)           : sub_col_id = bg2.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b01)      : sub_col_id = obj.col_id;
+				bg3_sub_enable & bg3_win.sub_maskn & bg3.col_enable & bg3.col_pri & ^f_bg3_pri : sub_col_id = bg3.col_id;
+				bg4_sub_enable & bg4_win.sub_maskn & bg4.col_enable & bg4.col_pri              : sub_col_id = bg4.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b00)      : sub_col_id = obj.col_id;
+				bg3_sub_enable & bg3_win.sub_maskn & bg3.col_enable & (^bg3.col_pri)           : sub_col_id = bg3.col_id;
+				bg4_sub_enable & bg4_win.sub_maskn & bg4.col_enable & (^bg4.col_pri)           : sub_col_id = bg4.col_id;
+				else : sub_col_id = 0x00;
+			}
+			(bg_mode==5) | (bg_mode==6) : alt{
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b11) : sub_col_id = obj.col_id;
+				bg1_sub_enable & bg1_win.sub_maskn & bg1.col_enable_sub & bg1.col_pri     : sub_col_id = bg1.col_id_sub;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b10) : sub_col_id = obj.col_id;
+				bg2_sub_enable & bg2_win.sub_maskn & bg2.col_enable_sub & bg2.col_pri     : sub_col_id = bg2.col_id_sub;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b01) : sub_col_id = obj.col_id;
+				bg1_sub_enable & bg1_win.sub_maskn & bg1.col_enable_sub & (^bg1.col_pri)  : sub_col_id = bg1.col_id_sub;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b00) : sub_col_id = obj.col_id;
+				bg2_sub_enable & bg2_win.sub_maskn & bg2.col_enable_sub & (^bg2.col_pri)  : sub_col_id = bg2.col_id_sub;
+				else : sub_col_id = 0x00;
+			}
+			bg_mode==7 : alt{ // mode 7
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b11) : sub_col_id = obj.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b10) : sub_col_id = obj.col_id;
+				bg2_sub_enable & bg2_win.sub_maskn & md7.ext_col_en & md7.ext_pri         : sub_col_id = md7.ext_col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b01) : sub_col_id = obj.col_id;
+				bg1_sub_enable & bg1_win.sub_maskn & md7.col_enable                       : sub_col_id = md7.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b00) : sub_col_id = obj.col_id;
+				bg2_sub_enable & bg2_win.sub_maskn & md7.ext_col_en & (^md7.ext_pri)      : sub_col_id = md7.ext_col_id;
+				else : sub_col_id = 0x00;
+			}
+			else : alt{ // mode 2,3,4
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b11) : sub_col_id = obj.col_id;
+				bg1_sub_enable & bg1_win.sub_maskn & bg1.col_enable & bg1.col_pri         : sub_col_id = bg1.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b10) : sub_col_id = obj.col_id;
+				bg2_sub_enable & bg2_win.sub_maskn & bg2.col_enable & bg2.col_pri         : sub_col_id = bg2.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b01) : sub_col_id = obj.col_id;
+				bg1_sub_enable & bg1_win.sub_maskn & bg1.col_enable & (^bg1.col_pri)      : sub_col_id = bg1.col_id;
+				obj_sub_enable & obj_win.sub_maskn & obj.col_enable & (obj.col_pri==0b00) : sub_col_id = obj.col_id;
+				bg2_sub_enable & bg2_win.sub_maskn & bg2.col_enable & (^bg2.col_pri)      : sub_col_id = bg2.col_id;
+				else : sub_col_id = 0x00;
+			}
+		}
+		fi_sub_col_id := /|sub_col_id;
+
+		sel prevent_math_sel;
+		switch(prevent_math){
+		case 0b00: prevent_math_sel = 0b0;
+		case 0b01: prevent_math_sel = col_win.main_maskn;
+		case 0b10: prevent_math_sel = ^col_win.main_maskn;
+		case 0b11: prevent_math_sel = 0b1;
+		}
+
+		if( (
+			  ((m_z==0b000) & back_colmath_enable)
+			| ((m_z==0b001) & bg1_colmath_enable)
+			| ((m_z==0b010) & bg2_colmath_enable)
+			| ((m_z==0b011) & bg3_colmath_enable)
+			| ((m_z==0b100) & bg4_colmath_enable)
+			| ((m_z==0b101) & obj_colmath_enable & obj.col_id<6>)
+			) & ^prevent_math_sel
+		){
+			fi_screen_math := 0b1;
+		}
+		else fi_screen_math := 0b0;
+
+		// バハムートラグーン、ラストフィールドの色がおかしくならないように対策
+	//	if(^(main_cgram.set | main_cgram.write | main_cgram.read)){
+		if(^(vblank | hblank | f_forceblanking)){ // ok
+			main_cgram.getcol(main_col_id);
+			sub_cgram.getcol(sub_col_id);
+		}
+	}
+
+	instruct screen_math par{
+		sel force_black_sel;
+		switch(force_black){
+		case 0b00: force_black_sel = 0b0;
+		case 0b01: force_black_sel = col_win.main_maskn;
+		case 0b10: force_black_sel = ^col_win.main_maskn;
+		case 0b11: force_black_sel = 0b1;
+		}
+
+		alt{
+			force_black_sel : par{
+				main_col = 0b000000000000000; // Black
+			}
+			f_direct_color & (bg_mode==7) & (m_z_reg==0b001) : par{
+				main_col = md7.dir_col;
+			}
+			else : par{
+				main_col = main_cgram.D_out;
+			}
+		}
+
+		colmath_R.precon(fi_screen_math, f_subscreen_math, fi_sub_col_id);
+		colmath_R.postcon(f_colmath_op, f_half_colmath);
+		colmath_G.precon(fi_screen_math, f_subscreen_math, fi_sub_col_id);
+		colmath_G.postcon(f_colmath_op, f_half_colmath);
+		colmath_B.precon(fi_screen_math, f_subscreen_math, fi_sub_col_id);
+		colmath_B.postcon(f_colmath_op, f_half_colmath);
+	}
+
+	// BGパターンの読み込み
+	stage BG_MEM {
+		reg_wr r_state<3>;
+		first_state tiles;
+		finish;
+		state tiles par{
+			any{
+				bg_mode==0 : switch(r_state){
+					case 0: bg1.tile_read();
+					case 1: bg1.pat01_read();
+					case 2: bg2.tile_read();
+					case 3: bg2.pat01_read();
+					case 4: bg3.tile_read();
+					case 5: bg3.pat01_read();
+					case 6: bg4.tile_read();
+					case 7: bg4.pat01_read();
+				}
+				bg_mode==1 : switch(r_state){
+					case 0: bg1.tile_read();
+					case 1: bg1.pat01_read();
+					case 2: bg1.pat23_read();
+					case 3: bg2.tile_read();
+					case 4: bg2.pat01_read();
+					case 5: bg2.pat23_read();
+					case 6: bg3.tile_read();
+					case 7: bg3.pat01_read();
+				}
+				bg_mode==2 : switch(r_state){
+					case 0: bg3.ofsH_read();
+					case 1: bg3.ofsV_read();
+					case 2: bg1.tile_read();
+					case 3: bg1.pat01_read();
+					case 4: bg1.pat23_read();
+					case 5: bg2.tile_read();
+					case 6: bg2.pat01_read();
+					case 7: bg2.pat23_read();
+				}
+				bg_mode==3 : switch(r_state){
+					case 0: bg1.tile_read();
+					case 1: bg1.pat01_read();
+					case 2: bg1.pat23_read();
+					case 3: bg1.pat45_read();
+					case 4: bg1.pat67_read();
+					case 5: bg2.tile_read();
+					case 6: bg2.pat01_read();
+					case 7: bg2.pat23_read();
+				}
+				bg_mode==4 : switch(r_state){
+					case 0: bg3.ofsH_read();
+					case 1: bg1.tile_read();
+					case 2: bg1.pat01_read();
+					case 3: bg1.pat23_read();
+					case 4: bg1.pat45_read();
+					case 5: bg1.pat67_read();
+					case 6: bg2.tile_read();
+					case 7: bg2.pat01_read();
+				}
+				bg_mode==5 : switch(r_state){
+					case 0: bg1.tile_read();
+					case 1: bg1.pat01_read();
+					case 2: bg1.pat23_read();
+					case 3: bg1.pat45_read();
+					case 4: bg1.pat67_read();
+					case 5: bg2.tile_read();
+					case 6: bg2.pat01_read();
+					case 7: bg2.pat23_read();
+				}
+				bg_mode==6 : switch(r_state){ // 未テスト
+					case 0: bg3.ofsH_read();
+					case 1: bg3.ofsV_read();
+					case 2: bg1.tile_read();
+					case 3: bg1.pat01_read();
+					case 4: bg1.pat23_read();
+					case 5: bg1.pat45_read();
+					case 6: bg1.pat67_read();
+					case 7: ;
+				}
+			}
+			r_state++;
+
+			if(r_state==0b111){
+				scantile++;
+
+				// 常に33タイル読み込む
+				if(scantile<5>){ //==0b100000){ // 32
+					goto hsync_wait;
+				}
+			}
+			// この実装でBG_MEM_fetchはx=247が最後となっている
+		}
+		state hsync_wait par{
+			if(bg_hsync){
+				r_state := 0b000;
+				// 次スキャンラインのための準備
+				scantile := 0b000000;
+				goto tiles;
+			}
+		}
+	}
+
+	// BG 描画
+	stage BG_DRAW {
+		reg_wr obj_drawing, fi_md7_draw;
+		sel black;
+		sel pR<5>, pG<5>, pB<5>;
+		first_state sst;
+		par{
+			// 0ライン目は非表示にする
+			// bright==0でも黒にする
+			// f_forceblanking_vだとバハムートラグーンで線が入る
+			black = (scanline==0b000000000) | vblank | f_forceblanking | (n_brightness==0x0);
+		}
+		state sst par{
+			vx++;
+			if(vx==-1){
+				scanline_latch := scanline;
+				vx_add := 0;
+			}
+
+			bg1.pat_draw(); bg2.pat_draw();
+			bg3.pat_draw(); bg4.pat_draw();
+
+			if(vx<2:0>==0b111){
+				bg1.pat_temp();
+				bg2.pat_temp();
+				bg3.pat_temp();
+				bg4.pat_temp();
+			}
+
+			// OBJ
+			if(vx==-8) obj_drawing := 0b1;
+			// obj_drawingをoffしないでいいのか？
+			if(obj_drawing) obj.draw(); // 0x1F9(-7)から開始.
+			// お尻がfetchの開始と重ならないように
+		//	if(vx==-4)  obj_searching := 0b1; // ハタヤマハッチのプロ野球でBG2がずれる？
+			if(vx==-16) obj_searching := 0b1; // 未確定
+			// x255描画終了からOBJフェッチ
+			// initもあるので少し早めに始める
+			if(vx==253) obj_fetching := 0b1; // 確定
+
+			// Mode 7
+			if(vx==-17) md7.line_init();
+			if(vx==-2)  fi_md7_draw := 0b1; // -1から開始
+			if(vx==254) fi_md7_draw := 0b0; // 0x0FFに終了
+			if((bg_mode==7) & fi_md7_draw) md7.draw();
+
+			make_col();
+
+			if(vx<8>) finish;
+			else goto cout1;
+		}
+		state cout1 par{
+			screen_math();
+
+			alt{
+				(bg_mode==5) | (bg_mode==6) : par{
+					colmath_R.colcon(main_cgram.D_out<4:0>, 0b00000, fixedcol_R);
+					colmath_G.colcon(main_cgram.D_out<9:5>, 0b00000, fixedcol_G);
+					colmath_B.colcon(main_cgram.D_out<14:10>, 0b00000, fixedcol_B);
+					pR = colmath_R.col_out;
+					pG = colmath_G.col_out;
+					pB = colmath_B.col_out;
+				}
+				f_pH512 : par{
+					pR = sub_cgram.D_out<4:0>;
+					pG = sub_cgram.D_out<9:5>;
+					pB = sub_cgram.D_out<14:10>;
+				}
+				else : par{
+					colmath_R.colcon(main_col<4:0>, sub_cgram.D_out<4:0>, fixedcol_R);
+					colmath_G.colcon(main_col<9:5>, sub_cgram.D_out<9:5>, fixedcol_G);
+					colmath_B.colcon(main_col<14:10>, sub_cgram.D_out<14:10>, fixedcol_B);
+					pR = colmath_R.col_out;
+					pG = colmath_G.col_out;
+					pB = colmath_B.col_out;
+				}
+			}
+
+			if(black){
+				R = 0b00000; G = 0b00000; B = 0b00000;
+			}
+			else{
+				R = colmath_R.bright(n_brightness, pR).dout;
+				G = colmath_G.bright(n_brightness, pG).dout;
+				B = colmath_B.bright(n_brightness, pB).dout;
+			}
+			VIDEO_enable();
+			goto cout2;
+		}
+		state cout2 par{
+			screen_math();
+
+			alt{
+				(bg_mode==5) | (bg_mode==6) : par{
+					colmath_R.colcon(sub_cgram.D_out<4:0>, 0b00000, fixedcol_R);
+					colmath_G.colcon(sub_cgram.D_out<9:5>, 0b00000, fixedcol_G);
+					colmath_B.colcon(sub_cgram.D_out<14:10>, 0b00000, fixedcol_B);
+					pR = colmath_R.col_out;
+					pG = colmath_G.col_out;
+					pB = colmath_B.col_out;
+				}
+				f_pH512 : par{
+					pR = main_col<4:0>;
+					pG = main_col<9:5>;
+					pB = main_col<14:10>;
+				}
+				else : par{
+					colmath_R.colcon(main_col<4:0>, sub_cgram.D_out<4:0>, fixedcol_R);
+					colmath_G.colcon(main_col<9:5>, sub_cgram.D_out<9:5>, fixedcol_G);
+					colmath_B.colcon(main_col<14:10>, sub_cgram.D_out<14:10>, fixedcol_B);
+					pR = colmath_R.col_out;
+					pG = colmath_G.col_out;
+					pB = colmath_B.col_out;
+				}
+			}
+
+			if(black){
+				R = 0b00000; G = 0b00000; B = 0b00000;
+			}
+			else{
+				R = colmath_R.bright(n_brightness, pR).dout;
+				G = colmath_G.bright(n_brightness, pG).dout;
+				B = colmath_B.bright(n_brightness, pB).dout;
+			}
+			VIDEO_enable();
+			if(vx<8>) goto est;
+			else goto sst;
+			finish;
+		}
+		state est par{
+			// タイルやパターン読み出しアクセスと合わせる必要がある.
+			if(bg_hsync){
+				vx := -17; // 0b000000000 - 0b000010000 -1;
+				vx_add := 340;
+				obj_searching := 0b0;
+				obj_fetching := 0b0;
+				obj_drawing := 0b0;
+				bg_hsync := 0b0;
+				goto sst;
+			}
+			else vx++;
+			finish;
+		}
+	}
+
+}

@@ -1,0 +1,483 @@
+
+%i "../fb2/mul_s16.h"
+//%i "../fb2/mul_s16u7.h"
+%i "../fb2/bsr_s24.h"
+%i "env_gen.h"
+%i "../../../hdl/dsdac7.h"
+
+%d READ_AL  0b001
+%d READ_AH  0b010
+%d READ_HD  0b011
+%d READ_BD  0b100
+
+declare mul_s16s8 interface
+{
+	input a<16>, b<8>;
+	output dout<24>;
+	instrin con;
+	instr_arg con(a, b);
+}
+
+circuit ch_dsp
+{
+	input io_adrs<4>, io_din<8>;
+	output io_dout<8>;
+	instrin io_write(io_adrs, io_din), io_read(io_adrs);
+
+	instrin key_on, key_off, run;
+	input DIR<8>;
+	instrout read_req;
+	output vA<16>;
+	reg_wr vA_reg<16>;
+	instrin read_ack;
+	input vD<8>;
+
+	instrin ready, tim32kHz;
+	instrin sw_intpl_off;
+	input sw_mute;
+
+	output out_L<16>, out_R<16>;
+
+	instrself read(rid_sel, vA_sel);
+	sel rid_sel<3>, vA_sel<16>;
+	reg_wr rid_reg<3>;
+
+	reg_wr r_VOL_L<8>, r_VOL_R<8>;
+	reg_wr r_PH<6>, r_PL<8>;
+	reg_wr pitch<14>, pitch_count<15>;
+	reg_wr r_SRCN<8>;
+
+	instrin endx_clear;
+	reg_wr f_endx;
+	output endx;
+
+	reg_wr src_AH<8>, src_AL<8>;
+	instrself adinc;
+
+	reg_wr src_data<8>;
+	reg_ws src_empty, dec_sw;
+
+	instrself decode(nibble);
+	sel nibble<4>;
+	reg_wr range<4>, filter<2>, f_loop, f_end;
+
+	reg_wr decode_data<16>, pre0_data<16>, pre1_data<16>;
+
+instrin sw_brrmul_off;
+mul_s16s8 brr_mul0, brr_mul1;
+
+	reg_wr f_key;
+	reg_wr r_ADSR1<8>, r_ADSR2<8>, r_GAIN<8>;
+
+	env_gen env;
+	reg_wr decenv_reg<16>;
+
+//	mul_s16u7 env_mul;
+//	mul_s16 env_mul, vol_mul;
+	mul_s16 ev_mul;
+	reg_ws reset;
+	reg_wr mul_sw<3>;
+
+	input f_noise, noise<15>;
+
+	input f_pmod, voice_in<16>;
+	mul_s16 pmod_mul;
+	output voice_out<16>;
+
+	dsdac7 ddac;
+	output disp_vold, disp_freq<7>;
+
+	reg_wr interpolate_data<23>; // 16 + 7
+	reg_wr pre0_intpl<16>, pre1_intpl<16>;
+	instrself pitch_over;
+
+	instrself halt;
+	output f_halt;
+	reg_wr f_halt_reg;
+
+output dbg<8>;
+
+	stage_name src_read { task do(); }
+	stage_name read_wait { task do(rid_reg, vA_reg); }
+	stage_name brr_decode { task do(); }
+	stage_name wait_key_off { task do(); }
+	stage_name interpolate { task do(); }
+
+	if(reset){
+		mul_sw := 0b001;
+		reset := 0;
+	}
+
+	if(read_wait.do) read_req();
+
+	vA = vA_reg;
+
+	env.ADSR1 = r_ADSR1;
+	env.ADSR2 = r_ADSR2;
+	env.GAIN = r_GAIN;
+
+	sel wave_data<16>;
+	alt{
+		f_noise      : wave_data = noise || 0b0;
+		sw_intpl_off : wave_data = decode_data;
+		else         : wave_data = interpolate_data<22:7>;
+	}
+
+	reg_wr out_L_reg<16>, out_R_reg<16>;
+	switch(mul_sw){
+	case 0b001: decenv_reg := ev_mul.con(wave_data, 0b000000000||env.eout).dout<22:7>;
+	case 0b010: out_L_reg := ev_mul.con(decenv_reg, 16#r_VOL_L).dout<22:7>;
+	case 0b100: out_R_reg := ev_mul.con(decenv_reg, 16#r_VOL_R).dout<22:7>;
+	}
+	if(^reset) mul_sw := mul_sw<1:0> || mul_sw<2>;
+
+	if(sw_mute){
+		out_L = 0;
+		out_R = 0;
+		ddac.DACin = 0;
+	}
+	else{
+		out_L = out_L_reg;
+		out_R = out_R_reg;
+		ddac.DACin = env.eout;
+	}
+
+	endx = f_endx;
+	voice_out = decenv_reg; // ピッチモジュレーション用
+
+	disp_vold = ddac.DACout;
+	disp_freq = pitch<13:7>;
+
+	instruct halt f_halt_reg := 0b1;
+	f_halt = f_halt_reg;
+
+	instruct io_write switch(io_adrs){
+		case 0x0: r_VOL_L := io_din;
+		case 0x1: r_VOL_R := io_din;
+		case 0x2: r_PL := io_din;
+		case 0x3: r_PH := io_din<5:0>;
+		case 0x4: r_SRCN := io_din;
+		case 0x5: par{ r_ADSR1:=io_din; env.set_ADSR1(); }
+		case 0x6: par{ r_ADSR2:=io_din; env.set_ADSR2(); }
+		case 0x7: par{ r_GAIN :=io_din; env.set_GAIN(); }
+	}
+
+	// 8,9以外はwriteした値をreadする方がいいらしい
+	instruct io_read switch(io_adrs){
+		case 0x0: io_dout = r_VOL_L;
+		case 0x1: io_dout = r_VOL_R;
+		case 0x2: io_dout = r_PL;
+		case 0x3: io_dout = 0b00 || r_PH;
+		case 0x4: io_dout = r_SRCN;
+		case 0x5: io_dout = r_ADSR1; // これがないとエナジーブレイカーで
+		case 0x6: io_dout = r_ADSR2; // ちゃんと音が出ない
+		case 0x7: io_dout = r_GAIN; // XMSNESで生成したものなど
+		case 0x8: io_dout = 0b0 || env.eout;
+		case 0x9: io_dout = decenv_reg<15:8>;
+	}
+
+	instruct endx_clear f_endx := 0b0;
+
+	instruct key_on par{
+		f_key := 0b1;
+		f_loop := 0b0;
+		src_empty := 0b1;
+		generate src_read.do();
+		pre0_data := 0;
+		pre1_data := 0;
+		pre0_intpl := 0;
+		pre1_intpl := 0;
+		dec_sw := 0b1;
+		env.key_on();
+		f_endx := 0b0;
+		pitch_count := 0;
+	}
+
+	instruct key_off par{
+		env.key_off();
+		// エンベロープが0になるまで待つことでリリースクリック音を防止
+		generate wait_key_off.do();
+	}
+
+	// 128kHz
+	// pitch_count<15>
+	instruct run par{
+		sel pitch_sa<15>;
+		pitch_sa = pitch_count - 0b100_0000_0000_0000;
+		if(pitch_sa<14>){
+			pitch_count += (0b0||pitch);
+		}
+		else{
+			if(^ready) generate brr_decode.do();
+			pitch_over();
+			pitch_count := pitch_sa + (0b0||pitch);
+		}
+	}
+
+	instruct tim32kHz par{
+		// レディ時はエンベロープ待機
+		if(^ready) env.tim32kHz();
+
+		// ピッチの更新とピッチモジュレーション
+		// (s16>>5=s11) x u14 = 25 >> 10 = 15?
+	//	pmod_mul.con(0b00000||voice_in<15:5>, 0b00||r_PH||r_PL); // FF6死闘でNG
+		pmod_mul.con(16#voice_in<15:5>, 0b00||r_PH||r_PL); // ok
+		if(f_pmod){
+			pitch := (r_PH || r_PL) + pmod_mul.dout<23:10>;
+		}
+		else{
+			pitch := r_PH || r_PL;
+		}
+	}
+
+	instruct read par{
+		generate read_wait.do(rid_sel, vA_sel);
+	}
+
+	instruct adinc par{
+		sel src_adinc<16>;
+		src_adinc = (src_AH||src_AL) + 0x0001;
+		src_AH := src_adinc<15:8>;
+		src_AL := src_adinc< 7:0>;
+	}
+
+	instruct decode par{
+		// New ADPCM
+		sel now_data<16>;
+		any{
+			(range==0x0) : par{
+				now_data = 16#nibble<3:1>;
+			}
+			(range==0xD) | (range==0xE) | (range==0xF) : par{ // 13,14,15
+				now_data = (5#nibble<3>) || 0b00000000000;
+			}
+			else : now_data = (16#nibble) << (range-0x1);
+		}
+
+		// New BRRフィルタ 2014/9/14
+		// マイナス成分は符号反転し符号拡張後に減算する事。ok
+		// 18bitも17bitも変わらないので17bitで加算.
+		// 加算して符号反転するとLEが増える.
+		sel inner_data<17>;
+	if(sw_brrmul_off){
+		sel pre0_data_n<16>;
+		sel ftype2_pre0<17>, ftype2_pre1<17>;
+		sel ftype3_pre0<17>, ftype3_pre1<17>;
+
+		pre0_data_n = -pre0_data;
+
+		switch(filter){
+		case 0b00:
+			inner_data = (17#now_data);
+		case 0b01:
+			inner_data = (17#now_data)
+				// +15/16
+				+ (17#pre0_data) // +1
+				+ (17#pre0_data_n<15:4>); // -1/16
+		case 0b10: par{
+			inner_data = (17#now_data)
+				+ ftype2_pre0 + ftype2_pre1;
+				// +61/32
+			ftype2_pre0 =
+				  (pre0_data||0b0) // +2
+				+ (17#( (17#pre0_data_n) + (pre0_data_n||0b0) )<16:5>); // -1/32 -1/16
+				// -15/16
+			ftype2_pre1 =
+				  (17#pre1_data<15:4>) // +1/16
+				+ (17#(-pre1_data)); // -1
+			}
+		case 0b11: par{
+			inner_data = (17#now_data)
+				+ ftype3_pre0 + ftype3_pre1;
+				// +115/64
+			ftype3_pre0 =
+				  (pre0_data||0b0) // +2
+				+ (17#( (19#pre0_data_n) + (17#pre0_data_n||0b00) + (pre0_data_n||0b000) )<18:6>); // -1/64 -1/16 -1/8
+				// -13/16
+			ftype3_pre1 =
+				  (17#( (17#pre1_data) + (pre1_data||0b0) )<16:4>) // +1/16 +1/8
+				+ (17#(-pre1_data)); // -1
+			}
+		}
+	}
+	else{
+		sel f0<8>, f1<8>;
+		switch(filter){
+			case 0:  par{ f0 =   0; f1 =   0; }
+			case 1:  par{ f0 =  60; f1 =   0; }
+			case 2:  par{ f0 = 122; f1 = -60; }
+			case 3:  par{ f0 = 115; f1 = -52; }
+			default: par{ f0 =   0; f1 =   0; }
+		}
+
+		inner_data = (17#now_data)
+			+ brr_mul0.con(pre0_data, f0).dout<22:6>
+			+ brr_mul1.con(pre1_data, f1).dout<22:6>;
+	}
+
+		sel clip_data<16>;
+		any{
+			inner_data<16:15>==0b10 : clip_data = 0x8000; // -32768にclip
+			inner_data<16:15>==0b01 : clip_data = 0x7FFF; //  32767にclip
+			else                    : clip_data = inner_data<15:0>;
+		}
+
+		pre1_data   := pre0_data;
+		pre0_data   := 16#clip_data<14:0>;
+		decode_data := clip_data<14:0> || 0b0;
+
+		// 補間用データ
+		pre1_intpl := pre0_intpl;
+		pre0_intpl := clip_data<14:0> || 0b0;
+	}
+
+	// 連続key onのために一旦初期状態に戻す
+	stage src_read {
+		reg_wr bk_count<3>;
+		first_state st_getsl;
+		state st_getsl if((^ready) & f_key & ^read_wait.do){
+			// 開始アドレス下位取得
+			read(READ_AL, (DIR||0x00) + (0b000000||r_SRCN||f_loop||0b0));
+			goto st_getsh;
+		}
+		state st_getsh any{
+			key_on | ^f_key : goto st_getsl;
+			else : if(^read_wait.do){
+				// 開始アドレス上位取得
+				read(READ_AH, (DIR||0x00) + (0b000000||r_SRCN||f_loop||0b1));
+				goto st_head;
+			}
+		}
+		state st_head any{
+			key_on | ^f_key : goto st_getsl;
+			else : if(src_empty & ^read_wait.do){
+				// ヘッダ取得
+				read(READ_HD, src_AH || src_AL);
+				adinc();
+				bk_count := 0b000;
+				goto st_data;
+			}
+		}
+		state st_data any{
+			key_on | ^f_key : goto st_getsl;
+			else : if(src_empty & ^read_wait.do){
+				// ブロックデータ取得×8
+				read(READ_BD, src_AH || src_AL);
+				adinc();
+				bk_count++;
+				if(/&bk_count) any{
+					f_end : par{
+						f_endx := 0b1;
+						goto st_getsl;
+						if(^f_loop) finish;
+					}
+					else : goto st_head;
+				}
+			}
+		}
+	}
+
+	stage read_wait {
+		any{
+			read_ack : par{
+				switch(rid_reg){
+					case READ_AL: src_AL := vD;
+					case READ_AH: src_AH := vD;
+					case READ_HD: par{
+						range := vD<7:4>;
+						filter := vD<3:2>;
+						f_loop := vD<1>;
+						f_end := vD<0>;
+					}
+					case READ_BD: par{
+						src_data := vD;
+						src_empty := 0b0;
+					}
+				}
+				finish;
+			}
+			f_key==0b0 : finish;
+		}
+	}
+
+	stage brr_decode {
+		if(dec_sw){
+			if(f_key & ^src_empty){
+				decode(src_data<7:4>);
+				if(^sw_intpl_off) generate interpolate.do();
+				dec_sw := 0b0;
+				finish;
+			}
+		}
+		else{
+			decode(src_data<3:0>);
+			if(^sw_intpl_off) generate interpolate.do();
+			src_empty := 0b1;
+			dec_sw := 0b1;
+			finish;
+		}
+	}
+
+	stage wait_key_off {
+		any{
+			env.eout==0b0000000 : par{
+				f_key := 0b0;
+				finish;
+			}
+			key_on : finish;
+		}
+	}
+
+	// アクティブ線形補間
+	// 次の値を超えないようにすること
+	stage interpolate {
+		reg_wr intpl_pitch<24>, intpl_pitch_next<18>;
+		sel intpl_wins<3>;
+		bsr_s24 intpl_bsr;
+		first_state st1;
+		par{
+
+			if(pitch_over){
+				intpl_pitch := 0x000000;
+			}
+			else{
+				intpl_pitch += (0x00||0b00||pitch);
+			}
+
+			// 補間ウィンドウシフト幅
+			alt{
+				/|pitch<13:11> : intpl_wins = 0; // P>=0x0800
+				pitch<10>      : intpl_wins = 1; // P>=0x0400
+				pitch<9>       : intpl_wins = 2; // P>=0x0200
+				pitch<8>       : intpl_wins = 3; // P>=0x0100
+				pitch<7>       : intpl_wins = 4; // P>=0x0080
+				pitch<6>       : intpl_wins = 5; // P>=0x0040 // RuinArm
+				pitch<5>       : intpl_wins = 6; // P>=0x0020 // RuinArm
+				else           : intpl_wins = 7; // P>=0x0010
+			}
+		}
+		state st1 if(^brr_decode.do){
+			interpolate_data := pre1_intpl || 0b0000000;
+			intpl_pitch_next := ((0x61A||0b000000) >> intpl_wins);
+			goto st2;
+		}
+		state st2 par{
+			alt{
+				pitch_over | brr_decode.do : goto st1;
+				(^f_key) /*| (intpl_wins==0b000)*/ : par{ // 周波数が高いときは補間処理はしない?
+					goto st1; finish;
+				}
+				intpl_pitch<23:12>==intpl_pitch_next<17:6> : par{
+					intpl_pitch_next += ((0x61A||0b000000) >> intpl_wins);
+					// s16 - s16 = s17
+					sel pre_sa<17>;
+					pre_sa = (17#pre0_intpl) - (17#pre1_intpl);
+					// 右シフト幅はintpl_winsから余裕を持たせること
+					intpl_bsr.con(pre_sa||0b0000000, 0b0||intpl_wins);
+					interpolate_data += intpl_bsr.dout<22:0>;
+				}
+			}
+		}
+	}
+
+}

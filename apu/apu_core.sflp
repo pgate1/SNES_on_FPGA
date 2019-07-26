@@ -1,0 +1,367 @@
+
+%i "spc700.h"
+%i "dsp_core.h"
+%i "mem/ipl_rom.h"
+%i "timer.h"
+
+circuit apu_core
+{
+	instrin io_write(io_adrs, io_wport), io_read(io_adrs);
+	input io_adrs<2>, io_wport<8>;
+	output io_rport<8>;
+	reg_wr io_rport_reg<8>;
+
+	instrin spc_run;
+	input D_in<8>;
+	output A<16>, D_out<8>;
+	instrout read_mem_req, write_mem_req;
+	instrin ack;
+
+	instrin timer_run, dsp_run;
+	instrin set_play(p_adrs, p_data);
+	input p_adrs<8>, p_data<8>;
+	instrin soft_reset, ready;
+	input mute<8>;
+	instrin sw_echo_off;
+instrin sw_brrmul_off;
+
+	output sound_L<17>, sound_R<17>;
+
+	output pc_out<16>, ir_out<8>, f_halt<3>, halt_code<8>;
+
+//	instrout dbg_state_save;
+//	output dbg_state<64>;
+output dbg<8>;
+	output disp_note<8>, disp_vold<8>;
+	output disp_freq_0<7>, disp_freq_1<7>, disp_freq_2<7>, disp_freq_3<7>;
+	instrin sw_intpl_off;
+
+	spc700 spc;
+	ipl_rom iplrom;
+	timer timer0, timer1, timer2;
+	dsp_core dsp;
+
+	reg_ws reset;
+	instrself halt(h_code);
+	sel h_code<8>;
+	reg_wr h_code_reg<8>;
+
+	reg_wr adrs_reg<16>;
+	reg dout_reg<8>;
+	reg_wr io_reg<8>;
+//	reg_wr spc_write_req;
+
+	instrself map_io, map_wmem, map_ipl;
+	instrself ack_b;
+	reg_wr doing<2>;
+
+	reg_wr ctrl_reg<7>;
+	reg_ws f_show_ROM;
+	reg_wr dsp_adrs<8>;
+	reg_wr r_port_r0<8>, r_port_r1<8>, r_port_r2<8>, r_port_r3<8>;
+	reg_wr r_port_w0<8>, r_port_w1<8>, r_port_w2<8>, r_port_w3<8>;
+	reg_wr reg_F8<8>, reg_F9<8>;
+
+	stage_name spc_read { task do(adrs_reg); }
+	stage_name dsp_read { task do(adrs_reg); }
+	stage_name read_mem_wait { task do(); }
+	stage_name write_mem_wait { task do(); }
+	stage_name read_io_wait { task do(); }
+	stage_name spc_write { task do(adrs_reg, dout_reg); }
+	stage_name dsp_write { task do(adrs_reg, dout_reg); }
+
+	if(reset){
+		reset := 0b0;
+	}
+
+	iplrom.adrs = 0b0 || adrs_reg<5:0>;
+	iplrom.read();
+
+	any{
+		adrs_reg<15:4>==0x00F : par{
+			map_io();
+			spc.Din = io_reg;
+		}
+		(adrs_reg<15:6>==0b1111_1111_11) & f_show_ROM : par{ // 0xFFC0 - 0xFFFF
+			map_ipl();
+			spc.Din = iplrom.dout;
+		}
+		else : par{
+			map_wmem();
+			spc.Din = D_in;
+		}
+	}
+
+	dsp.vD = D_in;
+
+	// CPU向け
+	if(io_read) io_rport_reg := io_rport;
+	else io_rport = io_rport_reg;
+
+	alt{
+		doing!=0b00 : ;
+		dsp.read_req : par{
+			generate dsp_read.do(dsp.vA);
+			doing := 0b10;
+		}
+		dsp.write_req : par{
+			generate dsp_write.do(dsp.vA, dsp.Dout);
+			doing := 0b10;
+		}
+		spc.read_req : par{
+			generate spc_read.do(spc.A);
+			doing := 0b01;
+		}
+		spc.write_req : par{
+			generate spc_write.do(spc.A, spc.Dout);
+			doing := 0b01;
+		}
+	}
+
+	// APU_WRAM
+	A = adrs_reg;
+	D_out = dout_reg;
+
+instruct sw_brrmul_off dsp.sw_brrmul_off();
+
+	sound_L = dsp.out_L;
+	sound_R = dsp.out_R;
+
+	instruct halt h_code_reg := h_code;
+	f_halt = (/|h_code_reg) || spc.f_halt || dsp.f_halt;
+	alt{
+		h_code_reg!=0x00 : halt_code = h_code_reg;
+		spc.f_halt : halt_code = 0xF1;
+		dsp.f_halt : halt_code = 0xF2;
+	}
+
+	pc_out = spc.pc_out;
+	ir_out = spc.ir_out;
+
+//	dbg_state = spc.dbg_state;
+	disp_note = dsp.disp_note;
+	disp_vold = dsp.disp_vold;
+	par(i=0;i<4;i++){
+		disp_freq[i] = dsp.disp_freq[i];
+	}
+
+	dsp.mute = mute;
+	instruct sw_echo_off dsp.sw_echo_off();
+	instruct sw_intpl_off dsp.sw_intpl_off();
+
+	instruct soft_reset par{
+		f_show_ROM := 0b1;
+		spc.reset_in();
+		spc.ready();
+		dsp.reset_in();
+		dsp.ready();
+		spc.ack();
+		dsp.ack();
+		timer0.clear();
+		timer1.clear();
+		timer2.clear();
+	}
+
+//	instruct spc.dbg_state_save par{
+//		dbg_state_save();
+//	}
+
+	instruct set_play any{
+		p_adrs<7>==0b0 : dsp.io_write(p_adrs<6:0>, p_data);
+		p_adrs<7:4>==0xE : spc.set_play(p_adrs<3:0>, p_data);
+		p_adrs<7:4>==0xF : any{
+			(p_adrs<3:0>==0x0) | // none
+			(p_adrs<3:0>==0x1) | // ctrl
+			(p_adrs<3:0>==0x2) | // dsp_adrs
+		//	(p_adrs<3:0>==0x3) | // dsp_data
+		//	(p_adrs<3:0>==0x4) | (p_adrs<3:0>==0x5) | // port0,1
+		//	(p_adrs<3:0>==0x6) | (p_adrs<3:0>==0x7) | // port2,3
+			(p_adrs<3:0>==0x8) | (p_adrs<3:0>==0x9) | // none
+			(p_adrs<3:0>==0xA) | (p_adrs<3:0>==0xB) | (p_adrs<3:0>==0xC) // timer target
+		//	(p_adrs<3:0>==0xD) | (p_adrs<3:0>==0xE) | (p_adrs<3:0>==0xF) // timer counter
+			: generate spc_write.do(0x00F||p_adrs<3:0>, p_data);
+			(p_adrs<3:0>==0x1) : par{
+				timer0.clear(); timer1.clear(); timer2.clear();
+			}
+			(p_adrs<3:0>==0x4) : r_port_r0 := p_data;
+			(p_adrs<3:0>==0x5) : r_port_r1 := p_data;
+			(p_adrs<3:0>==0x6) : r_port_r2 := p_data;
+			(p_adrs<3:0>==0x7) : r_port_r3 := p_data;
+		}
+	}
+
+	instruct ready par{
+		h_code_reg := 0x00;
+		spc.ready();
+		dsp.ready();
+		spc.ack();
+		dsp.ack();
+	}
+
+	instruct io_write switch(io_adrs){
+		case 0b00: r_port_r0 := io_wport;
+		case 0b01: r_port_r1 := io_wport;
+		case 0b10: r_port_r2 := io_wport;
+		case 0b11: r_port_r3 := io_wport;
+	}
+
+	instruct io_read switch(io_adrs){
+		case 0b00: io_rport = r_port_w0;
+		case 0b01: io_rport = r_port_w1;
+		case 0b10: io_rport = r_port_w2;
+		case 0b11: io_rport = r_port_w3;
+	}
+
+	instruct spc_run if((^ready) & (^soft_reset) & ^/|f_halt){
+		if((^spc.read_req) & (^spc.write_req)) spc.run();
+	}
+
+	instruct timer_run if(^soft_reset){
+		reg_wr timer_timing<3>;
+		if(timer_timing==0b111){
+			if(ctrl_reg<0>) timer0.run();
+			if(ctrl_reg<1>) timer1.run();
+		}
+		timer_timing++;
+		if(ctrl_reg<2>) timer2.run();
+	}
+
+	instruct dsp_run if(^soft_reset){
+		dsp.run();
+	}
+
+	instruct ack_b par{
+		switch(doing){
+		case 0b01: spc.ack();
+		case 0b10: dsp.ack();
+		}
+		doing := 0b00;
+	}
+
+	stage spc_read {
+		par{
+			finish;
+			any{
+				map_io : par{
+					switch(adrs_reg<3:0>){
+						case 0x0 : io_reg := 0x00; // False read
+						case 0x1 : io_reg := 0x00; //f_show_ROM || ctrl_reg;
+						case 0x2 : io_reg := dsp_adrs;
+						case 0x3 : io_reg := dsp.io_read(dsp_adrs<6:0>).io_dout;
+						case 0x4 : io_reg := r_port_r0;
+						case 0x5 : io_reg := r_port_r1;
+						case 0x6 : io_reg := r_port_r2;
+						case 0x7 : io_reg := r_port_r3;
+						case 0x8 : io_reg := reg_F8;// 0x00;//read_mem test
+						case 0x9 : io_reg := reg_F9;// 0x00;//read_mem test
+						case 0xA : io_reg := 0x00;//timer0.get_target().target_out;
+						case 0xB : io_reg := 0x00;//timer1.get_target().target_out;
+						case 0xC : io_reg := 0x00;//timer2.get_target().target_out;
+						case 0xD : io_reg := 0x0 || timer0.get_count().count;
+						case 0xE : io_reg := 0x0 || timer1.get_count().count;
+						case 0xF : io_reg := 0x0 || timer2.get_count().count;
+					}
+					generate read_io_wait.do();
+				}
+				map_ipl : par{
+				//	iplrom.read(); // adrs=0b0||adrs_reg<5:0>);
+					generate read_io_wait.do();
+				}
+				map_wmem : par{
+					read_mem_req();
+					generate read_mem_wait.do();
+				}
+			//	else : halt(0x56);
+			}
+		}
+	}
+
+	stage dsp_read {
+		par{
+			read_mem_req();
+			generate read_mem_wait.do();
+			finish;
+		}
+	}
+
+	stage read_io_wait {
+		par{
+			ack_b();
+			finish;
+		}
+	}
+
+	stage read_mem_wait {
+		if(ack){
+			ack_b();
+			finish;
+		}
+	}
+	
+	stage spc_write {
+		par{
+			finish;
+			any{
+				map_io : switch(adrs_reg<3:0>){
+					case 0x0 : ; // False write
+					case 0x1 : par{
+						any{
+							dout_reg<4> & ^io_write : par{
+								r_port_r0 := 0x00;
+								r_port_r1 := 0x00;
+							}
+							dout_reg<5> & ^io_write : par{
+								r_port_r2 := 0x00;
+								r_port_r3 := 0x00;
+							}
+							// ctrl_regでカウンタを停止してクリアするのでカウントアップとは競合しない
+							dout_reg<0> & ^ctrl_reg<0> : timer0.clear();
+							dout_reg<1> & ^ctrl_reg<1> : timer1.clear();
+							dout_reg<2> & ^ctrl_reg<2> : timer2.clear();
+						}
+						ctrl_reg := dout_reg<6:0>;
+						f_show_ROM := dout_reg<7>;
+					}
+					case 0x2 : dsp_adrs := dout_reg;
+					case 0x3 : if(dsp_adrs<7>==0b0) dsp.io_write(dsp_adrs<6:0>, dout_reg);
+					case 0x4 : r_port_w0 := dout_reg;
+					case 0x5 : r_port_w1 := dout_reg;
+					case 0x6 : r_port_w2 := dout_reg;
+					case 0x7 : r_port_w3 := dout_reg;
+					case 0x8 : reg_F8 := dout_reg;
+					case 0x9 : reg_F9 := dout_reg;
+					case 0xA : timer0.set_target(dout_reg);
+					case 0xB : timer1.set_target(dout_reg);
+					case 0xC : timer2.set_target(dout_reg);
+					case 0xD : ; // none
+					case 0xE : ; // none
+					case 0xF : ; // none
+				}
+				else : par{ // map_wmem
+					write_mem_req();
+				}
+			}
+
+			any{
+				map_io : ack_b();
+				else : generate write_mem_wait.do();
+			}
+		}
+	}
+
+	stage dsp_write {
+		par{
+			write_mem_req();
+			generate write_mem_wait.do();
+			finish;
+		}
+	}
+
+	stage write_mem_wait {
+		if(ack){
+			ack_b();
+			finish;
+		}
+	}
+
+}

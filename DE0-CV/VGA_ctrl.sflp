@@ -1,0 +1,90 @@
+
+circuit VGA_ctrl
+{
+	instrin run;
+	instrout snes_hsync, snes_vsync;
+	instrout view;
+	output h_sync, v_sync;
+	output win_valid, dis_valid;
+
+	reg_ws reset;
+	reg_wr h_win_valid, h_view_valid;
+	reg_wr h_dis_valid, v_dis_valid;
+
+	reg_wr h_count<10>, v_count<10>;
+	reg_ws h_sync_reg, v_sync_reg;
+	instrself h_timming, v_timming;
+
+	if(reset){
+		v_count := 2 + 33 -4; // -4は微調整
+		reset := 0b0;
+	}
+
+	h_sync = h_sync_reg;
+	v_sync = v_sync_reg;
+
+	win_valid = h_view_valid & v_dis_valid;
+	dis_valid = h_dis_valid  & v_dis_valid;
+
+	instruct run h_timming();
+
+	// 25 MHz
+	instruct h_timming par{
+		any{
+			h_count==0 : par{
+				h_sync_reg := 0b0;
+			}
+			h_count==96 : par{
+				h_sync_reg := 0b1;
+			}
+			h_count==(96+48) : par{
+				h_dis_valid := 0b1;
+			}
+			h_count==(96+48+64) : par{
+				h_win_valid := 0b1;
+			}
+			h_count==(96+48+64+512) : par{
+				h_win_valid := 0b0;
+			}
+			h_count==(96+48+640) : par{
+				h_dis_valid := 0b0;
+			}
+		}
+
+		// view(h_win_valid)でvramからreadして次のクロック(h_view_valid)で表示する
+		if(h_win_valid) view();
+		h_view_valid := h_win_valid;
+
+		if(h_count==(800-1)){
+			h_count := 0;
+			v_timming();
+		}
+		else h_count++;
+	}
+
+	instruct v_timming par{
+		any{
+			v_count==0 : par{
+				v_sync_reg := 0b0;
+			}
+			v_count==2 : par{
+				v_sync_reg := 0b1;
+			}
+			v_count==(2+33) : par{
+				v_dis_valid := 0b1;
+			}
+			v_count==(2+33+480) : par{
+				v_dis_valid := 0b0;
+			}
+		}
+
+		if(v_count==(525-1)){
+			v_count := 0;
+			snes_vsync();
+		}
+		else v_count++;
+
+		if(v_count<0>) snes_hsync();
+	}
+
+}

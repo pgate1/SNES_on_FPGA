@@ -1,0 +1,65 @@
+
+circuit colormath
+{
+	input fi_screen_math, f_subscreen_math, fi_sub_col_id;
+	input main_col<5>, sub_col<5>, fix_col<5>;
+	input f_colmath_op, f_half_colmath;
+	instrin precon(fi_screen_math, f_subscreen_math, fi_sub_col_id);
+	instrin postcon(f_colmath_op, f_half_colmath);
+	instrin colcon(main_col, sub_col, fix_col);
+	output col_out<5>;
+
+	sel s_c<5>;
+	instrself cmath;
+	sel op_c<6>, math_c<6>, post_c<5>;
+
+	input n_brightness<4>, col_in<5>;
+	instrin bright(n_brightness, col_in);
+	output dout<5>;
+
+	if(fi_screen_math){
+		if(f_subscreen_math){
+			if(fi_sub_col_id){
+				s_c = sub_col;
+				cmath();
+			}
+			else{
+				s_c = fix_col;
+			}
+		}
+		else{
+			s_c = fix_col;
+			cmath();
+		}
+	}
+	else{
+		s_c = 0b00000;
+	}
+
+	if(f_colmath_op){ // Œ¸ŽZ
+		op_c = (0b0 || main_col) - (0b0 || s_c);
+		if(op_c<5>) math_c = 0b000000;
+		else math_c = op_c;
+	}
+	else{ // ‰ÁŽZ
+		op_c = (0b0 || main_col) + (0b0 || s_c);
+		math_c = op_c;
+	}
+
+	if(f_half_colmath & cmath){
+		post_c = math_c<5:1>;
+	}
+	else{
+		if(math_c<5>) post_c = 0b11111;
+		else post_c = math_c<4:0>;
+	}
+
+	col_out = post_c;
+
+	instruct bright par{
+		sel bn_c<6>;
+		bn_c = (0b0 || col_in) - (0b0 || (^n_brightness) || 0b0);
+		if(bn_c<5>) dout = 0b00000;
+		else dout = bn_c<4:0>;
+	}
+}

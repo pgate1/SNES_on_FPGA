@@ -1,0 +1,51 @@
+
+circuit timer
+{
+	input din<8>;
+	output count<4>;
+	instrin set_target(din), run, get_count, clear;
+
+	reg_wr target<8>;
+	reg_wr in_timer<8>;
+	reg_wr counter<4>;
+
+	stage_name count_up { task do(); }
+
+	instruct set_target par{
+		// 0x01-0x00 (0-256)
+		target := din;
+	}
+/*
+	instruct get_target par{
+		target_out = target;
+	}
+*/
+	instruct run par{
+		sel timer_sel<8>;
+		timer_sel = in_timer + 0x01;
+		if(timer_sel==target){
+			generate count_up.do();
+			in_timer := 0x00;
+		}
+		else in_timer := timer_sel;
+	}
+
+	instruct get_count par{
+		count = counter;
+		counter := 0x0;
+	}
+
+	// ctrl_regでカウンタを停止してクリアするのでカウントアップとは競合しない
+	instruct clear par{
+		in_timer := 0x00;
+		counter := 0x0;
+	}
+
+	stage count_up {
+		if(^get_count){
+			counter++;
+			finish;
+		}
+	}
+
+}

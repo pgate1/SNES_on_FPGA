@@ -1,0 +1,205 @@
+
+%i "typecheck.h"
+
+%i "Cx4/Cx4_core.h"
+
+circuit cartridge
+{
+	input BA<8>, A<16>, Din<8>;
+	output Dout<8>;
+
+	reg_ws reset;
+
+	reg_wr f_hl_ok;
+
+	instrin init;
+	input check_LH, check_A<5>, check_data<8>;
+	instrin check(check_LH, check_A, check_data);
+	typecheck romtype_L, romtype_H;
+	input sw_romtype;
+
+	input rom_type_din<8>;
+	instrin set_rom_type(rom_type_din);
+	reg_wr rom_type<8>; // 8MB ROM (BadApple=0xFF)
+	output bank_type;
+
+	instrself f_cx4;
+	Cx4_core cx4;
+
+	instrin read;
+	instrout read_rom, read_sram;
+	output rom_adrs<23>; // 8BM対応
+	input read_rom_data<8>, read_sram_data<8>;
+	input read_ack;
+	output ack;
+
+	output save_ram_size<4>;
+	sel save_ram_mask<18>;
+	instrself map_sram;
+	instrin write;
+	instrout write_sram;
+	output sram_adrs<18>;
+
+	output halt_code<8>;
+output dbg<8>;
+
+	if(reset){
+		reset := 0b0;
+	}
+
+	halt_code = cx4.halt_code;
+
+dbg = cx4.dbg;
+
+	instruct init par{
+		romtype_L.init();
+		romtype_H.init();
+		f_hl_ok := 0b0;
+	}
+
+	instruct check par{
+		if(check_LH==0b0) romtype_L.check(check_A, check_data);
+		if(check_LH==0b1) romtype_H.check(check_A, check_data);
+		if((check_LH==0b1) & (check_A==0b11111)){
+			f_hl_ok := 0b1;
+		}
+	}
+
+	sel psa<8>;
+	psa = romtype_L.point - romtype_H.point;
+	if(sw_romtype){ // 反転
+		if(psa<7>) bank_type = 0;
+		else       bank_type = 1;
+	}
+	else{ // 通常
+		if(psa<7>) bank_type = 1;
+		else       bank_type = 0;
+	}
+
+	if(rom_type==0xFF){
+		save_ram_size = 0;
+	}
+	else{
+		if(bank_type==0){
+			save_ram_size = romtype_L.SRAM_size;
+		}
+		else{
+			save_ram_size = romtype_H.SRAM_size;
+		}
+	}
+
+	if(f_hl_ok){
+		if(bank_type==0){
+			rom_type := romtype_L.ROM_type;
+		}
+		else{
+			rom_type := romtype_H.ROM_type;
+		}
+		f_hl_ok := 0b0;
+	}
+
+	// for 8MB ROM
+	instruct set_rom_type par{
+		rom_type := rom_type_din;
+	}
+
+	// Cx4
+	if(rom_type==0xF3) f_cx4();
+
+	any{
+		rom_type==0xFF : par{
+			// 23 = 1 + 6 + 16
+			rom_adrs = (^BA<7>) || BA<5:0> || A;
+		}
+		f_cx4 : par{
+			rom_adrs = cx4.rom_adrs;
+		}
+		else : par{
+			switch(bank_type){
+			case 0: // LowROM <22> -> SDRAM
+				rom_adrs = 0b0 || BA<6:0> || A<14:0>;
+			case 1: // HiROM <23>(<22>) -> SDRAM
+				rom_adrs = 0b0 || BA<5:0> || A<15:0>;
+			}
+		}
+	}
+
+	cx4.BA = BA;
+	cx4.A = A;
+	cx4.Din = Din;
+
+	switch(save_ram_size){
+	case 0: save_ram_mask = 0b000000000000000000; // no save ram
+	case 1: save_ram_mask = 0b000000011111111111; //   2KB
+	case 2: save_ram_mask = 0b000000111111111111; //   4KB
+	case 3: save_ram_mask = 0b000001111111111111; //   8KB
+	case 4: save_ram_mask = 0b000011111111111111; //  16KB
+	case 5: save_ram_mask = 0b000111111111111111; //  32KB
+	case 6: save_ram_mask = 0b001111111111111111; //  64KB
+	case 7: save_ram_mask = 0b011111111111111111; // 128KB
+	default: save_ram_mask = -1;
+	}
+
+	if(rom_type==0xFF){
+		sram_adrs = 0; // none
+	}
+	else any{
+		(bank_type==0) & (BA<7:3>==0b01110) & (A<15>==0b0) : par{ // $70-77 0111_0---
+			map_sram();
+			// sram20 32KB <15> x 8 bank 256KB
+			sram_adrs = (BA<2:0> || A<14:0>) & save_ram_mask;
+		}
+		(bank_type==1) & (BA<6:4>==0b011) & (A<15:13>==0b011) : par{ // $6000-$7FFF 011-_----_----_----
+			map_sram();
+			// sram21 8KB <13> x 16 bank 128KB
+			sram_adrs = (0b0 || BA<3:0> || A<12:0>) & save_ram_mask;
+		}
+	}
+
+	instruct read par{
+		if(map_sram){
+			if(save_ram_size!=0){
+				read_sram();
+			}
+		}
+		else{
+			if(f_cx4 & (cx4.halt_code==0)) cx4.read();
+			else read_rom();
+		}
+	}
+
+	instruct cx4.rom_read_req par{
+		read_rom();
+	}
+
+	cx4.rom_data = read_rom_data;
+	cx4.rom_ack = read_ack;
+
+	if(map_sram){
+		Dout = read_sram_data;
+		ack = read_ack;
+	}
+	else{
+		if(f_cx4){
+			Dout = cx4.Dout;
+			ack = cx4.ack;
+		}
+		else{
+			Dout = read_rom_data;
+			ack = read_ack;
+		}
+	}
+
+	instruct write par{
+		if(map_sram){
+			if(save_ram_size!=0){
+				write_sram();
+			}
+		}
+		else{
+			if(f_cx4 & (cx4.halt_code==0)) cx4.write();
+		}
+	//	通常ROMへのwrite禁止
+	}
+
+}

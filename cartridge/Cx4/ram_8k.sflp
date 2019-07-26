@@ -1,0 +1,16 @@
+
+circuit ram_8k
+{
+	input adrs<13>, din<8>;
+	instrin read(adrs);
+	output dout<8>;
+	instrin write(adrs, din);
+
+	mem cells[8192]<8>;
+	reg_wr dout_reg<8>;
+
+	instruct read dout_reg := cells[adrs];
+	dout = dout_reg;
+
+	instruct write cells[adrs] := din;
+}

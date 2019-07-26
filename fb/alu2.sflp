@@ -1,0 +1,61 @@
+
+// ALU 8 bit
+// 2008/10/22
+
+circuit alu2
+{
+	input a<8>, b<8>, cin;
+	output dout<8>, cout, v;
+	instrin add(a, b, cin);
+	instrin sub(a, b, cin);
+	instrin and1(a, b);
+	instrin or1(a, b);
+	instrin eor1(a, b);
+	instrin ror1(a, cin);
+	instrin rol1(a, cin);
+	instrin lsr1(a);
+	instrin asl1(a);
+
+	instrself reqv;
+	sel b_base<8>, calc_a<9>, calc_sel<9>;
+
+	calc_a = (0b0||a) + (0x00||cin);
+	calc_sel = calc_a + (0b0||b_base);
+//	calc_sel = calc_a + (9#b_base); // 20150624C³
+
+	instruct reqv par{
+		v = (^(a<7>@b_base<7>)) & (a<7>@dout<7>);
+	}
+
+	instruct add par{
+		b_base = b;
+		dout = calc_sel<7:0>;
+		cout = calc_sel<8>;
+		reqv();
+	}
+	instruct sub par{
+		b_base = ^b;
+		dout = calc_sel<7:0>;
+		cout = calc_sel<8>;
+		reqv();
+	}
+	instruct and1 par{ dout = a & b; }
+	instruct or1  par{ dout = a | b; }
+	instruct eor1 par{ dout = a @ b; }
+	instruct ror1 par{
+		dout = cin || a<7:1>;
+		cout = a<0>;
+	}
+	instruct rol1 par{
+		dout = a<6:0> || cin;
+		cout = a<7>;
+	}
+	instruct lsr1 par{
+		dout = 0b0 || a<7:1>;
+		cout = a<0>;
+	}
+	instruct asl1 par{
+		dout = a<6:0> || 0b0;
+		cout = a<7>;
+	}
+}

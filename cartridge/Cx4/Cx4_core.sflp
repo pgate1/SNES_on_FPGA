@@ -1,0 +1,655 @@
+
+//%i "cx4_ram.h"
+%i "ram_8k.h"
+
+//%i "mul_s24.h"
+declare mul_s24 interface
+{
+	input a<24>, b<24>;
+	output dout<48>;
+	instrin con;
+	instr_arg con(a, b);
+}
+
+circuit Cx4_core
+{
+	input BA<8>, A<16>;
+	input Din<8>;
+	instrin read, write;
+	output Dout<8>, ack;
+	reg_wr Dout_reg<8>;
+
+	output rom_adrs<23>;
+	instrout rom_read_req(rom_adrs);
+	input rom_data<8>, rom_ack;
+	instrself rom_snes_ack_fast;
+
+	reg_ws reset;
+
+	sel map;
+//	cx4_ram ram; // size 0xC00 ?
+	ram_8k ram;
+
+	mem TestPattern[48]<8> = {
+		0x00, 0x00, 0x00, 0xFF,
+		0xFF, 0xFF, 0x00, 0xFF,
+		0x00, 0x00, 0x00, 0xFF,
+		0xFF, 0xFF, 0x00, 0x00,
+		0xFF, 0xFF, 0x00, 0x00,
+		0x80, 0xFF, 0xFF, 0x7F,
+		0x00, 0x80, 0x00, 0xFF,
+		0x7F, 0x00, 0xFF, 0x7F,
+		0xFF, 0x7F, 0xFF, 0xFF,
+		0x00, 0x00, 0x01, 0xFF,
+		0xFF, 0xFE, 0x00, 0x01,
+		0x00, 0xFF, 0xFE, 0x00
+	};
+
+	reg_wr rom_read_snes_adrs<23>, rom_read_cx4_adrs<23>;
+	sel read_rom_adrs<23>;
+	instrself read_rom(read_rom_adrs);
+	sel read_rom_ack;
+	instrself rom_cx4_ack_fast;
+
+	// Sprite
+	mem ram_0x062[16]<8>;
+
+	// DMA
+	mem ram_0x1F4[16]<8>;
+
+	reg_wr test_din<8>;
+
+	sel h_code<8>;
+	instrself halt(h_code);
+	reg_wr h_code_reg<8>;
+	output halt_code<8>;
+
+reg_wr sum<8>;
+output dbg<8>;
+
+	stage_name ram_init { task do(); }
+	stage_name ram_read_wait { task do(); }
+
+	stage_name gen_rom_read_snes_stg { task do(rom_read_snes_adrs); }
+	stage_name gen_rom_read_cx4_stg { task do(rom_read_cx4_adrs); }
+	stage_name rom_read_snes_stg { task do(); }
+	stage_name rom_read_cx4_stg { task do(); }
+
+	stage_name TestCommand { task do(test_din); }
+	stage_name ImmediateReg { task do(); }
+	stage_name ImmediateROM { task do(); }
+	stage_name DMA_start { task do(); }
+	stage_name Sum { task do(); }
+	stage_name Square { task do(); }
+	stage_name ConvOAM { task do(); }
+	stage_name DoScaleRotate { task do(); }
+	stage_name TransformLines { task do(); }
+
+	stage_name DrawWireFrame_clear { task do(); }
+	stage_name DrawWireFrame { task do(); }
+	stage_name Trapezoid { task do(); }
+
+	instruct halt h_code_reg := h_code;
+	halt_code = h_code_reg;
+
+dbg = sum;
+
+	if(reset){
+		reset := 0b0;
+		generate ram_init.do();
+	}
+
+	// 0x00-0x3F 0x6000-0x7FFF -> 0x0000-0x1FFF
+	map = (BA<7:6>==0b00) & (A<15:13>==0b011);
+
+	instruct read par{
+		if(map){
+			if(A==0x7F5E){
+				Dout_reg := 0b0 ||
+					(DMA_start.do | ConvOAM.do | DoScaleRotate.do | TransformLines.do | 
+					DrawWireFrame_clear.do | DrawWireFrame.do | Sum.do | Square.do | ImmediateReg.do | ImmediateROM.do)
+					|| 0b000000;
+			}
+			else{
+				ram.read(A<12:0>);
+				generate ram_read_wait.do();
+			}
+		}
+		else{
+			// 同時起動しないこと、SNESからのread優先
+		//	if(read_rom_ack){
+		//		rom_read_snes_adrs := 0b0 || BA<6:0> || A<14:0>;
+		//		generate rom_read_snes_stg.do();
+		//	}
+		//	else{
+				generate gen_rom_read_snes_stg.do(0b0 || BA<6:0> || A<14:0>); // LoROM map
+		//	}
+		}
+	}
+
+	if(rom_snes_ack_fast){
+		Dout = rom_data;
+	}
+	else{
+		Dout = Dout_reg;
+	}
+
+	ack = ((^gen_rom_read_snes_stg.do) & (^rom_read_snes_stg.do) & (^ram_read_wait.do)) | rom_snes_ack_fast;
+	read_rom_ack = ((^gen_rom_read_cx4_stg.do) & (^rom_read_cx4_stg.do)) | rom_cx4_ack_fast;
+
+	instruct write par{
+		if(map){
+			ram.write(A<12:0>, Din);
+			if((0b000||A<12:4>)==0x062) ram_0x062[A<3:0>] := Din;
+			if((0b000||A<12:4>)==0x1F4) ram_0x1F4[A<3:0>] := Din;
+			if(A==0x7F47) generate DMA_start.do();
+			if(A==0x7F4F){
+				if((ram_0x1F4[0xD]==0x0E) & ((Din&0xC3)==0x00)){
+					generate TestCommand.do(Din);
+				}
+				else any{
+					Din==0x00 : any{ // ProcessSprites
+						ram_0x1F4[0xD]==0x00 : generate ConvOAM.do();
+						ram_0x1F4[0xD]==0x03 : generate DoScaleRotate.do();
+						ram_0x1F4[0xD]==0x05 : generate TransformLines.do();
+						ram_0x1F4[0xD]==0x08 : generate DrawWireFrame.do();
+					}
+					Din==0x01 : generate DrawWireFrame_clear.do();
+					Din==0x22 : ;//generate Trapezoid.do();
+					Din==0x40 : generate Sum.do();
+					Din==0x54 : generate Square.do();
+					Din==0x5C : generate ImmediateReg.do();
+					Din==0x89 : generate ImmediateROM.do();
+				}
+			}
+		}
+	}
+
+	// チップ内でのROMreadはこれを使う事
+	instruct read_rom par{
+		generate gen_rom_read_cx4_stg.do(read_rom_adrs);
+	}
+
+	stage ram_init {
+		reg_wr init_adrs<13>;
+		par{
+			ram.write(init_adrs, 0x00);
+			init_adrs++;
+			if(/&init_adrs) finish;
+		}
+	}
+
+	stage ram_read_wait {
+		par{
+			Dout_reg := ram.dout;
+			finish;
+		}
+	}
+
+	stage gen_rom_read_snes_stg {
+		if((^rom_read_cx4_stg.do) | rom_cx4_ack_fast){
+			generate rom_read_snes_stg.do();
+			finish;
+		}
+	}
+
+	// SNESからのreadが同時に起きてない時にチップからROMreadする
+	stage gen_rom_read_cx4_stg {
+		if(((^gen_rom_read_snes_stg.do) & (^rom_read_snes_stg.do)) | rom_snes_ack_fast){
+			generate rom_read_cx4_stg.do();
+			finish;
+		}
+	}
+
+	stage rom_read_snes_stg {
+		first_state st1;
+		state st1 par{
+			rom_read_req(rom_read_snes_adrs);
+			goto st2;
+		}
+		state st2 if(rom_ack){
+		//	Dout_reg := rom_data;
+			rom_snes_ack_fast();
+			goto st1;
+			finish;
+		}
+	}
+
+	stage rom_read_cx4_stg {
+		first_state st1;
+		state st1 par{
+			rom_read_req(rom_read_cx4_adrs);
+			goto st2;
+		}
+		state st2 if(rom_ack){
+			rom_cx4_ack_fast();
+			goto st1;
+			finish;
+		}
+	}
+
+	stage TestCommand {
+		par{
+			ram.write((0x1F80)<12:0>, 0b0000||test_din<5:2>);
+			finish;
+		}
+	}
+
+	stage Sum {
+		reg_wr sum_adrs<11>, sum_data<16>;
+		first_state init;
+		state init par{
+		//	sum_adrs := 0;
+			sum_data := 0x0000;
+			goto st1;
+		}
+		state st1 par{
+			ram.read(0b00||sum_adrs);
+			goto st2;
+		}
+		state st2 par{
+			sum_data += 0x00 || ram.dout;
+			sum_adrs++;
+			if(/&sum_adrs) goto st3;
+			else goto st1;
+		}
+		state st3 par{
+			ram.write((0x1F80)<12:0>, sum_data<7:0>);
+			goto st4;
+		}
+		state st4 par{
+			ram.write((0x1F81)<12:0>, sum_data<15:8>);
+			goto init;
+			finish;
+		}
+	}
+
+	stage Square {
+		reg_wr sq0<8>, sq1<8>;
+		mul_s24 sq_mul;
+		first_state st1;
+		par{
+			sq_mul.con(ram.dout||sq1||sq0, ram.dout||sq1||sq0);
+		}
+		state st1 par{
+			ram.read((0x1F80)<12:0>);
+			goto st2;
+		}
+		state st2 par{
+			sq0 := ram.dout;
+			ram.read((0x1F81)<12:0>);
+			goto st3;
+		}
+		state st3 par{
+			sq1 := ram.dout;
+			ram.read((0x1F82)<12:0>);
+			goto st4;
+		}
+		state st4 par{
+			ram.write((0x1F83)<12:0>, sq_mul.dout<7:0>);
+			goto st5;
+		}
+		state st5 par{
+			ram.write((0x1F84)<12:0>, sq_mul.dout<15:8>);
+			goto st6;
+		}
+		state st6 par{
+			ram.write((0x1F85)<12:0>, sq_mul.dout<23:16>);
+			goto st7;
+		}
+		state st7 par{
+			ram.write((0x1F86)<12:0>, sq_mul.dout<31:24>);
+			goto st8;
+		}
+		state st8 par{
+			ram.write((0x1F87)<12:0>, sq_mul.dout<39:32>);
+			goto st9;
+		}
+		state st9 par{
+			ram.write((0x1F88)<12:0>, sq_mul.dout<47:40>);
+			goto st1;
+			finish;
+		}
+	}
+
+	stage ImmediateReg {
+		reg_wr ta<6>;
+		first_state st1;
+		state st1 par{
+			ta := 0;
+			goto st2;
+		}
+		state st2 par{
+			ram.write(0b0000000||ta, TestPattern[ta]);
+			ta++;
+			if(ta==47){
+				goto st1;
+				finish;
+			}
+		}
+	}
+
+	stage ImmediateROM {
+		first_state st1;
+		state st1 par{
+			ram.write((0x1F80)<12:0>, 0x36);
+			goto st2;
+		}
+		state st2 par{
+			ram.write((0x1F81)<12:0>, 0x43);
+			goto st3;
+		}
+		state st3 par{
+			ram.write((0x1F82)<12:0>, 0x05);
+			goto st1;
+			finish;
+		}
+	}
+
+	stage ConvOAM {
+		reg_wr OAMptr<13>, OAMptr2<13>;
+		reg_wr clear_adrs<13>;
+		sel globalX<16>, globalY<16>;
+		reg_wr offset<3>, srcptr<13>, icount<8>, SprCount<8>;
+		reg_wr spr_x_L<8>, spr_x_H<8>;
+		reg_wr spr_y_L<8>, spr_y_H<8>;
+		sel SprX<16>, SprY<16>;
+		reg_wr spr_attr_t<8>, SprAttr<8>, SprName<8>;
+		reg_wr rom_adrs_L<8>, rom_adrs_H<8>, sprptr<23>;
+		reg_wr SprCnt<8>;
+		reg_wr attr<8>, X<16>, Y<16>, name<8>;
+		reg_wr oamptr2_data<8>;
+
+		first_state st1;
+
+		par{
+			globalX = ram_0x062[2] || ram_0x062[1];
+			globalY = ram_0x062[4] || ram_0x062[3];
+			SprX = (spr_x_H || spr_x_L) - globalX;
+			SprY = (spr_y_H || spr_y_L) - globalY;
+		}
+
+		// OAMクリア
+		state st1 par{
+			OAMptr := 0b000 || ram_0x062[6] || 0b00;
+			clear_adrs := (0x01FD)<12:0>;
+			goto st2;
+		}
+		state st2 par{
+			ram.write(clear_adrs, 0xE0);
+			clear_adrs -= 4;
+			if(clear_adrs<12:2>==(OAMptr<12:2>+1)) goto st3;
+		}
+
+		// スプライトループ準備
+		state st3 par{
+			icount := ram_0x062[0];
+			OAMptr2 := (0x0200)<12:0> + (0b0000000||ram_0x062[6]<7:2>);
+			SprCount := 0x80 - ram_0x062[6];
+			offset := ram_0x062[6]<1:0> || 0b0;
+			srcptr := (0x0220)<12:0>;
+			goto st4;
+		}
+		state st4 par{
+			if((icount!=0) & (SprCount!=0)) goto st5;
+			else{
+				goto st1;
+				finish;
+			}
+		}
+
+		// 各スプライトループ
+		state st5 par{
+			ram.read(srcptr);
+			goto st6;
+		}
+		state st6 par{
+			spr_x_L := ram.dout;
+			ram.read(srcptr+1);
+			goto st7;
+		}
+		state st7 par{
+			spr_x_H := ram.dout;
+			ram.read(srcptr+2);
+			goto st8;
+		}
+		state st8 par{
+			spr_y_L := ram.dout;
+			ram.read(srcptr+3);
+			goto st9;
+		}
+		state st9 par{
+			spr_y_H := ram.dout;
+			ram.read(srcptr+4);
+			goto st10;
+		}
+		state st10 par{
+			spr_attr_t := ram.dout;
+			ram.read(srcptr+5);
+			goto st11;
+		}
+		state st11 par{
+			SprName := ram.dout;
+			ram.read(srcptr+6);
+			goto st12;
+		}
+		state st12 par{
+			SprAttr := spr_attr_t | ram.dout;
+			ram.read(srcptr+7);
+			goto st13;
+		}
+		state st13 par{
+			rom_adrs_L := ram.dout;
+			ram.read(srcptr+8);
+			goto st14;
+		}
+		state st14 par{
+			rom_adrs_H := ram.dout;
+			ram.read(srcptr+9);
+			goto st15;
+		}
+		state st15 par{
+			sprptr := ram.dout || rom_adrs_H<6:0> || rom_adrs_L;
+			read_rom(ram.dout || rom_adrs_H<6:0> || rom_adrs_L);
+			goto st16;
+		}
+		state st16 if(read_rom_ack){
+			SprCnt := rom_data;
+			sprptr++;
+			if(rom_data!=0) goto st20;
+			else{
+				//if(spr_count!=0) goto st;
+				//else 
+				goto st50; // loop end
+			}
+		}
+
+		// ループ内
+		state st20 par{ // for(int SprCnt=*sprptr++;
+			if((SprCnt!=0) & (SprCount!=0)) goto st21;
+			else goto st50;
+		}
+		state st21 par{
+			read_rom(sprptr);
+			goto st22;
+		}
+		state st22 if(read_rom_ack){
+			attr := rom_data;
+			read_rom(sprptr+1);
+			goto st23;
+		}
+		state st23 if(read_rom_ack){
+			X := 16#rom_data;
+			read_rom(sprptr+2);
+			goto st24;
+		}
+		state st24 if(read_rom_ack){
+			Y := 16#rom_data;
+			read_rom(sprptr+3);
+			goto st25;
+		}
+		state st25 if(read_rom_ack){
+			name := rom_data;
+
+			if(SprAttr<6>){
+				if(attr<5>) X := -X -16 + SprX;
+				else X := -X -8 + SprX;
+			}
+			else{
+				X += SprX;
+			}
+
+			if(SprAttr<7>){
+				if(attr<5>) Y := -Y -16 + SprY;
+				else Y := -Y -8 + SprY;
+			}
+			else{
+				Y += SprY;
+			}
+
+			goto st26;
+		}
+		state st26 par{
+			if(
+				// X>=-16 >=0xFFF0 && X<=272 <=0x0110
+				// -16<=X<=-1 >=0xFFF0 || 0<=X<=272 <=0x0110
+				((X<15:4>==0xFFF) | ((0x0110-X)<15>==0b0)) &
+				// Y>=-16 >=0xFFF0 && Y<=224 <=0x00E0
+				// -16<=Y<=-1 >=0xFFF0 || 0<=Y<=224 <=0x00E0
+				((Y<15:4>==0xFFF) | ((Y<15>==0b0) & ((0x00E0-Y)<15>==0b0)))
+			){
+				goto st29;
+			}
+			else goto st40;
+		}
+		state st29 par{
+			ram.write(OAMptr+0, X<7:0>);
+			goto st30;
+		}
+		state st30 par{
+			ram.write(OAMptr+1, Y<7:0>);
+			goto st31;
+		}
+		state st31 par{
+			ram.write(OAMptr+2, SprName + name);
+			goto st32;
+		}
+		state st32 par{
+			ram.write(OAMptr+3, SprAttr @ (attr & 0xC0));
+			goto st33;
+		}
+		state st33 par{
+			ram.read(OAMptr2);
+			goto st34;
+		}
+		state st34 par{
+			oamptr2_data := (ram.dout & ^(0x03 << offset)) | ((0b000000||attr<5>||X<8>) << offset);
+			goto st35;
+		}
+		state st35 par{
+			ram.write(OAMptr2, oamptr2_data);
+			goto st36;
+		}
+		state st36 par{
+			OAMptr += 4;
+			SprCount--;
+			offset := (offset+2) & 0b110;
+			goto st37;
+		}
+		state st37 par{
+			if(offset==0) OAMptr2++;
+			goto st40;
+		}
+
+		state st40 par{
+			SprCnt--;
+			sprptr += 4;
+			goto st20;
+		}
+
+		state st50 par{
+			srcptr += 16;
+			icount--;
+			goto st4;
+		}
+	}
+
+	stage DMA_start {
+		sel dma_size<16>;
+		reg_wr dma_count<16>, src_adrs<23>, dst_adrs<13>;
+		first_state st1;
+		par{
+			dma_size = ram_0x1F4[4] || ram_0x1F4[3];
+		}
+		state st1 par{
+			src_adrs := ram_0x1F4[2] || ram_0x1F4[1]<6:0> || ram_0x1F4[0];
+			dst_adrs := ram_0x1F4[6]<4:0> || ram_0x1F4[5];
+			dma_count := 0;
+			goto st2;
+		}
+		state st2 par{
+			read_rom(src_adrs);
+			src_adrs++;
+			dma_count++;
+			goto st3;
+		}
+		state st3 if(read_rom_ack){
+			ram.write(dst_adrs, rom_data);
+//sum += rom_data;
+			dst_adrs++;
+			if(dma_count!=dma_size) goto st2;
+			else{
+//halt(0x27);
+				goto st1;
+				finish;
+			}
+		}
+	}
+
+	stage DrawWireFrame_clear {
+		reg_wr dw_clear_adrs<13>;
+		reg_wr DrawWireFramec_count<8>;
+		first_state st1;
+		state st1 par{
+			dw_clear_adrs := 0;
+			goto st2;
+		}
+		state st2 par{
+			ram.write(dw_clear_adrs+(0x0300)<12:0>, 0x00);
+			dw_clear_adrs++;
+			if(dw_clear_adrs==2301) goto st3;
+		}
+		state st3 par{
+			DrawWireFramec_count++;
+			if(/&DrawWireFramec_count){
+				goto st1;
+				finish;
+			}
+		}
+	}
+
+	stage DoScaleRotate {
+		reg_wr DoScaleRotate_count<8>;
+		par{
+			DoScaleRotate_count++;
+			if(/&DoScaleRotate_count) finish;
+		}
+	}
+
+	stage TransformLines {
+		reg_wr TransformLines_count<8>;
+		par{
+			TransformLines_count++;
+			if(/&TransformLines_count) finish;
+		}
+	}
+
+	stage DrawWireFrame {
+		reg_wr DrawWireFrame_count<8>;
+		par{
+			DrawWireFrame_count++;
+			if(/&DrawWireFrame_count) finish;
+		}
+	}
+
+}

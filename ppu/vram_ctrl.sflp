@@ -1,0 +1,46 @@
+
+circuit vram_ctrl
+{
+	output ADDR<15>, D_out<16>;
+	input D_in<16>, RD_ACK;
+	instrout RD, WE;
+
+	input adrs<16>, wdata<8>;
+	output rdata<16>;
+	instrin read(adrs), write(adrs, wdata);
+	output ack;
+
+	instrself s_read;
+	reg_wr wadrs_reg<16>, wdata_reg<8>;
+	stage_name s_write { task do(wadrs_reg, wdata_reg); }
+
+	rdata = D_in;
+	ack = RD_ACK;
+
+	instruct read par{
+		s_read();
+	}
+
+	instruct s_read par{
+		ADDR = adrs<15:1>;
+		RD();
+	}
+
+	instruct write par{
+		s_read();
+		generate s_write.do(adrs, wdata);
+	}
+
+	stage s_write {
+		if(RD_ACK){
+			finish;
+			ADDR = wadrs_reg<15:1>;
+			any{
+				wadrs_reg<0>==0b0 : D_out = D_in<15:8> || wdata_reg; // $2118
+				else              : D_out = wdata_reg  || D_in<7:0>; // $2119
+			}
+			WE();
+		}
+	}
+
+}

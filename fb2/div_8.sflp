@@ -1,0 +1,51 @@
+/*
+	•„†‚È‚µ‚P‚U€‚W‚Wc‚WƒrƒbƒgæZ
+*/
+
+circuit div_8
+{
+	input a<16>, b<8>;
+	output q<8>, r<8>, v, ack;
+	instrin dset(a, b), run;
+
+	reg_wr a_reg<17>, b_reg<17>;
+	reg_wr count<4>;
+
+	sel rot_a<17>, xor_a<17>, sub_a<17>;
+	sel xor_sub<18>;
+
+	q = sub_a<7:0>;
+	r = sub_a<16:9>;
+	v = sub_a<8>;
+
+// ‰‰Z‚Í0b1000‚ÅI—¹
+	any{
+		count==0b1010 : ack = 0b1;
+		else          : ack = 0b0;
+	}
+
+	rot_a = a_reg<15:0> || a_reg<16>;
+	xor_sub = (0b0 || rot_a) + (^(0b0 || b_reg)) + 0b000000000000000001;
+	any{
+		^xor_sub<17> : xor_a = rot_a @ 0b00000000000000001;
+		else         : xor_a = rot_a;
+	}
+	any{
+		xor_a<0> : sub_a = xor_a + (^b_reg) + 0b00000000000000001;
+		else     : sub_a = xor_a;
+	}
+
+	instruct dset par{
+		a_reg := 0b0 || a;
+		b_reg := b || 0b0 || 0x00;
+		count := 0;
+	}
+
+	instruct run par{
+		count++;
+		if(^count<3>) par{
+			a_reg := sub_a;
+		}
+	}
+
+}

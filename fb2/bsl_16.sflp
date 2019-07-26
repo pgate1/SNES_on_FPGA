@@ -1,0 +1,31 @@
+
+// Barrel Shifter Light 16 bit
+
+circuit bsl_16
+{
+	input din<16>, shift<4>;
+	output dout<31>;
+	instrin con(din, shift);
+
+	sel bs0<17>, bs1<19>, bs2<23>;
+
+	instruct con par{
+		any{
+			shift<0> : bs0 = din || 0b0;
+			else     : bs0 = 0b0 || din;
+		}
+		any{
+			shift<1> : bs1 = bs0 || 0b00;
+			else     : bs1 = 0b00 || bs0;
+		}
+		any{
+			shift<2> : bs2 = bs1 || 0b0000;
+			else     : bs2 = 0b0000 || bs1;
+		}
+		any{
+			shift<3> : dout = bs2 || 0b00000000;
+			else     : dout = 0b00000000 || bs2;
+		}
+	}
+
+}

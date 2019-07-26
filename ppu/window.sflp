@@ -1,0 +1,46 @@
+
+%i "inarea.h"
+
+circuit window
+{
+	input x<8>;
+	input enable1, enable2, io1, io2, mclogic<2>;
+	input left1<8>, right1<8>, left2<8>, right2<8>;
+	input main_en, sub_en;
+	instrin con(enable1, enable2, io1, io2, mclogic, left1, right1, left2, right2, main_en, sub_en);
+	output main_maskn, sub_maskn;
+
+	inarea ina1, ina2;
+	sel mask, maskn;
+output dbg;
+
+	ina1.x = x;
+	ina1.left = left1;
+	ina1.right = right1;
+	ina1.io = io1;
+
+	ina2.x = x;
+	ina2.left = left2;
+	ina2.right = right2;
+	ina2.io = io2;
+
+	alt{
+		enable1 & enable2 :
+			switch(mclogic){
+			case 0b00: mask = ina1.mask | ina2.mask; // OR
+			case 0b01: mask = ina1.mask & ina2.mask; // AND
+			case 0b10: mask = ina1.mask @ ina2.mask; // XOR
+			case 0b11: mask = ^(ina1.mask @ ina2.mask); // XNOR
+			}
+		enable1 : mask = ina1.mask;
+		enable2 : mask = ina2.mask;
+		else : mask = 0b0;
+	}
+//dbg = ina1.dbg;
+	maskn = ^mask;
+
+	if(main_en) main_maskn = maskn;
+	else        main_maskn = 0b1;
+	if(sub_en) sub_maskn = maskn;
+	else       sub_maskn = 0b1;
+}

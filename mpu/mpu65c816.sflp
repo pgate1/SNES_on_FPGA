@@ -1,0 +1,1734 @@
+
+/*
+	MPU 65C816
+*/
+
+%i "../fb/add_8.h"
+%i "../fb/add_16.h"
+%i "../fb2/alu_bcd16.h"
+
+%i "mpu65c816_ir.h"
+
+%d READ_IR  0b0001
+%d READ_WL  0b0010
+%d READ_WH  0b0011
+%d READ_AL  0b0100
+%d READ_AH  0b0101
+%d READ_AB  0b0110
+//%d READ_PCL 0b0111
+%d READ_PCH 0b1000
+%d READ_PB  0b1001
+%d ASET_DIR 0b1010
+
+circuit mpu65c816
+{
+	output BA<8>, A<16>, D_out<8>;
+	input D_in<8>;
+
+	instrin run, soft_reset, read_ack;
+	instrout read_req, write_req, ir_sync;
+
+	output pc_out<24>, ir_out<8>, ist_out<4>;
+
+	/* PPU */
+	instrin NMI;
+	input IRQn;
+
+	output flag_out, f_halt, halt_code<8>;
+	instrin sw_absidx_mem_off;
+
+	reg_ws reset;
+
+	instrself halt(h_code);
+	sel h_code<8>;
+	reg_wr h_code_reg<8>;
+
+	reg_wr pch<8>, pcl<8>;
+	sel pc<16>;
+	instrself pc_inc, pc_dec;
+	add_16 pcadd;
+	reg_wr fi_wait_interrupt;
+
+	reg_wr ir<8>; // for seconds reset
+	reg_wr ist<4>;
+	sel rid<4>;
+	reg_wr rid_reg<4>;
+	instrself nexti;
+
+	instrself read(rid, BA, A), write(BA, A, D_out);
+	instrself stack_push(push_data);
+	sel push_data<8>;
+	instrself stack_pull(f_pull);
+	sel f_pull;
+	add_16 spadd;
+
+	reg_wr rah<8>, ral<8>;
+	reg_wr rxh<8>, rxl<8>;
+	reg_wr ryh<8>, ryl<8>;
+	reg rpb<8>, rdb<8>, sph<8>, spl<8>;
+	reg_wr fn, fv, fm, fx, fd, fi, fz, fc, fe;
+	sel ra<16>, rx<16>, ry<16>;
+
+	reg_wr dir<16>;
+	add_16 diradd;
+
+	reg_wr wh<8>, wl<8>;
+	reg ab<8>, ah<8>, al<8>;
+	sel w<16>, adrs<16>;
+	instrself adrs_inc, adrs_dec;
+	reg_wr adrs_wrap;
+	add_16 adadd;
+	reg_wr ad_c;
+	add_8 abadd;
+
+	sel nz_8, nz_data<16>;
+	instrself nz_flags(nz_8, nz_data);
+
+	add_16 add;
+	alu_bcd16 alu_bcd;
+
+	instrself adrs_imm(h_imm);
+	sel h_imm;
+	instrself adrs_dir;
+	instrself adrs_diridx(a_dir_idx);
+	sel a_dir_idx<16>;
+	instrself adrs_diridxind;
+	instrself adrs_dirind;
+	instrself adrs_dirindidx;
+	instrself adrs_dirindlng;
+	instrself adrs_dirindlngidx;
+	instrself adrs_abs;
+	instrself adrs_abslng;
+	instrself adrs_absidx(a_abs_idx, a_abs_mem);
+	sel a_abs_idx<16>, a_abs_mem;
+// ASL(1E), DEC(DE), INC(FE), LSR(5E), ROL(3E), ROR(7E)
+	instrself adrs_abslngidx;
+	instrself adrs_stkrel;
+	instrself adrs_stkrelindidx;
+	instrself adrs_rellng;
+
+	sel state_pack<8>;
+	instrself state_expand(expand_data);
+	sel expand_data<8>;
+
+	reg_wr f_NMI, NMI_do, IRQ_do;
+	sel f_IRQ, COP_do, BRK_do;
+	output WaitforInterrupt;
+
+	stage_name interrupt { task do(); }
+	stage_name execute { task do(); }
+	stage_name read_wait { task do(); }
+
+	if(reset){
+		reset := 0b0;
+		// 65816 SYSTEM RESET
+		dir := 0x0000;
+		rdb := 0x00;
+		rpb := 0x00;
+		sph := 0x01;
+		spl := 0xFF;
+
+		fm := 0b1;
+		fx := 0b1;
+		fi := 0b1;
+		fd := 0b0;
+
+		ist := 0x0;
+		rid_reg := 0x0;
+
+		fe := 0b1;
+		pch := 0xFF;
+		pcl := 0xFC;
+		ir := 0x4C;	// JMP
+
+		f_NMI := 0b0;
+		NMI_do := 0b0;
+		IRQ_do := 0b0;
+		fi_wait_interrupt := 0b0;
+
+		h_code_reg := 0x00;
+	}
+
+	instruct soft_reset reset := 0b1;
+
+	pc = pch || pcl;
+	ra = rah || ral;
+	rx = rxh || rxl;
+	ry = ryh || ryl;
+	w = wh || wl;
+	adrs = ah || al;
+	state_pack = fn || fv || fm || fx || fd || fi || fz || fc;
+	COP_do = (ir==0x02);
+	BRK_do = (ir==0x00);
+	f_IRQ = IRQn==0b0;
+
+	pc_out = rpb || pc;
+	ir_out = ir;
+	ist_out = ist;
+
+	flag_out = fe;
+
+	// リザーブ領域からのir読み込みは大丈夫か ok
+
+	instruct halt h_code_reg := h_code;
+	f_halt = h_code_reg!=0x00;
+	halt_code = h_code_reg;
+
+	instruct read par{
+		read_req();
+		rid_reg := rid;
+		generate read_wait.do();
+if(read_wait.do & ^read_ack) halt(0x35);
+	}
+
+	instruct write par{
+		write_req();
+	}
+
+	instruct pc_inc par{
+		pcadd.con(pc, 0x0001, 0b0);
+		pch := pcadd.dout<15:8>;
+		pcl := pcadd.dout< 7:0>;
+	}
+
+	instruct pc_dec par{
+		pcadd.con(pc, 0xFFFF, 0b0);
+		pch := pcadd.dout<15:8>;
+		pcl := pcadd.dout< 7:0>;
+	}
+
+	instruct adrs_inc par{
+		adadd.con(adrs, 0x0001, 0b0);
+		ah := adadd.dout<15:8>;
+		al := adadd.dout< 7:0>;
+		if((^adrs_wrap) & (adrs==0xFFFF)) ab++;
+	}
+
+	instruct adrs_dec par{
+		adadd.con(adrs, 0xFFFF, 0b0);
+		ah := adadd.dout<15:8>;
+		al := adadd.dout< 7:0>;
+		if(adrs==0x0000) halt(0x73);
+	}
+
+	instruct stack_push par{
+		if(fe){
+			write(0x00, 0x01||spl, push_data);
+		}
+		else{
+			write(0x00, sph||spl, push_data);
+			sph := spadd.dout<15:8>;
+		}
+		spadd.con(sph||spl, 0xFFFF, 0b0); // sp--
+		spl := spadd.dout<7:0>;
+	}
+
+	instruct stack_pull par{
+		spadd.con(sph||spl, 0x0001, 0b0); // ++sp
+		if(fe){
+			read(READ_WL, 0x00, 0x01||spadd.dout<7:0>);
+		}
+		else{
+			if(f_pull) read(READ_WH, 0x00, spadd.dout);
+			else       read(READ_WL, 0x00, spadd.dout);
+			sph := spadd.dout<15:8>;
+		}
+		spl := spadd.dout<7:0>;
+	}
+
+	instruct state_expand par{
+		fn := expand_data<7>;
+		fv := expand_data<6>;
+		fm := expand_data<5>;
+		fx := expand_data<4>;
+		fd := expand_data<3>;
+		fi := expand_data<2>;
+		fz := expand_data<1>;
+		fc := expand_data<0>;
+	}
+
+	instruct nz_flags par{
+		if(nz_8){
+			fn := nz_data<7>;
+			fz := nz_data<7:0>==0x00;
+		}
+		else{
+			fn := nz_data<15>;
+			fz := nz_data<15:0>==0x0000;
+		}
+	}
+
+	// Immediate
+	instruct adrs_imm any{
+		ist==0x0 : par{
+			read(READ_WL, rpb, pc);
+			pc_inc();
+			if(h_imm) ist := 0x8;
+			else      ist := 0x1;
+		}
+		ist==0x1 : par{
+			read(READ_WH, rpb, pc);
+			pc_inc();
+			ist := 0x8;
+		}
+	}
+
+	// Direct Page
+	instruct adrs_dir any{
+		ist==0x0 : par{
+			read(ASET_DIR, rpb, pc);
+			pc_inc();
+			ab := 0x00;
+			if(dir<7:0>!=0x00) ist := 0x1;
+			else ist := 0x6;
+		}
+		ist==0x1 : ist := 0x6;
+	}
+
+	// Direct Page Indexed
+	instruct adrs_diridx any{
+		ist==0x0 : par{
+			read(ASET_DIR, rpb, pc);
+			pc_inc();
+			ab := 0x00;
+			if(dir<7:0>!=0x00) ist := 0x1;
+			else ist := 0x2;
+		}
+		ist==0x1 : ist := 0x2;
+		ist==0x2 : par{
+			adadd.con(adrs, a_dir_idx, 0b0);
+			al := adadd.dout<7:0>;
+			if(fe) ah := 0x00;
+			else   ah := adadd.dout<15:8>;
+			ist := 0x6;
+		}
+	}
+
+	// Direct Page Indirect
+	instruct adrs_dirind any{
+		ist==0x0 : par{
+			read(ASET_DIR, rpb, pc);
+			pc_inc();
+			if(dir<7:0>!=0x00) ist := 0x1;
+			else ist := 0x2;
+		}
+		ist==0x1 : ist := 0x2;
+		ist==0x2 : par{
+			read(READ_WL, 0x00, adrs);
+			adrs_inc();
+			ist := 0x3;
+		}
+		ist==0x3 : par{
+			read(READ_AH, 0x00, adrs);
+			al := wl;
+			ab := rdb;
+			ist := 0x6;
+		}
+	}
+
+	// Direct Page Indexed Indirect
+	instruct adrs_diridxind any{
+		ist==0x0 : par{
+			read(ASET_DIR, rpb, pc);
+			pc_inc();
+			if(dir<7:0>!=0x00) ist := 0x1;
+			else ist := 0x2;
+		}
+		ist==0x1 : ist := 0x2;
+		ist==0x2 : par{
+			adadd.con(adrs, rx, 0b0);
+			al := adadd.dout< 7:0>;
+			ah := adadd.dout<15:8>;
+			ist := 0x3;
+		}
+		ist==0x3 : par{
+			read(READ_WL, 0x00, adrs);
+			adrs_inc();
+			ist := 0x4;
+		}
+		ist==0x4 : par{
+			read(READ_AH, 0x00, adrs);
+			al := wl;
+			ab := rdb;
+			ist := 0x6;
+		}
+	}
+
+	// ok
+	// Direct Page Indirect Indexed
+	instruct adrs_dirindidx any{
+		ist==0x0 : par{
+			read(ASET_DIR, rpb, pc);
+			pc_inc();
+			if(dir<7:0>!=0x00) ist := 0x1;
+			else ist := 0x2;
+		}
+		ist==0x1 : ist := 0x2;
+		ist==0x2 : par{
+			read(READ_WL, 0x00, adrs);
+			adrs_inc();
+			ist := 0x3;
+		}
+		ist==0x3 : par{
+			read(READ_AH, 0x00, adrs);
+			ab := rdb;
+			adadd.con(0x00||wl, 0x00||ryl, 0b0);
+			al := adadd.dout<7:0>;
+			ad_c := adadd.dout<8>;
+			if(adadd.dout<8> | ^fx) ist := 0x4;
+			else                    ist := 0x6;
+		}
+		ist==0x4 : par{
+			adadd.con(rdb||ah, 0x00||ryh, ad_c);
+			ah := adadd.dout<7:0>;
+			ab := adadd.dout<15:8>;
+			ist := 0x6;
+		}
+	}
+
+	// Direct Page Indirect Long
+	instruct adrs_dirindlng any{
+		ist==0x0 : par{
+			read(ASET_DIR, rpb, pc);
+			pc_inc();
+			if(dir<7:0>!=0x00) ist := 0x1;
+			else ist := 0x2;
+		}
+		ist==0x1 : ist := 0x2;
+		ist==0x2 : par{
+			read(READ_WL, 0x00, adrs);
+			adrs_inc();
+			ist := 0x3;
+		}
+		ist==0x3 : par{
+			read(READ_WH, 0x00, adrs);
+			adrs_inc();
+			ist := 0x4;
+		}
+		ist==0x4 : par{
+			al := wl;
+			ah := wh;
+			ad_c := 0b0;
+			read(READ_AB, 0x00, adrs);
+			ist := 0x6;
+		}
+	}
+
+	// Direct Page Indirect Long Indexed
+	instruct adrs_dirindlngidx any{
+		ist==0x0 : par{
+			read(ASET_DIR, rpb, pc);
+			pc_inc();
+			if(dir<7:0>!=0x00) ist := 0x1;
+			else ist := 0x2;
+		}
+		ist==0x1 : ist := 0x2;
+		ist==0x2 : par{
+			read(READ_WL, 0x00, adrs);
+			adrs_inc();
+			ist := 0x3;
+		}
+		ist==0x3 : par{
+			read(READ_WH, 0x00, adrs);
+			adrs_inc();
+			ist := 0x4;
+		}
+		ist==0x4 : par{
+			adadd.con(w, ry, 0b0);
+			al := adadd.dout<7:0>;
+			ah := adadd.dout<15:8>;
+			ad_c := adadd.cout;
+			read(READ_AB, 0x00, adrs);
+			ist := 0x6;
+		}
+	}
+
+	// ok
+	instruct adrs_abs any{
+		ist==0x0 : par{
+			read(READ_AL, rpb, pc);
+			pc_inc();
+			ist := 0x1;
+		}
+		ist==0x1 : par{
+			read(READ_AH, rpb, pc);
+			pc_inc();
+			ab := rdb;
+			ist := 0x6;
+		}
+	}
+
+	// ok
+	instruct adrs_abslng any{
+		ist==0x0 : par{
+			read(READ_AL, rpb, pc);
+			pc_inc();
+			ist := 0x1;
+		}
+		ist==0x1 : par{
+			read(READ_AH, rpb, pc);
+			pc_inc();
+			ist := 0x2;
+		}
+		ist==0x2 : par{
+			ad_c := 0b0;
+			read(READ_AB, rpb, pc);
+			pc_inc();
+			ist := 0x6;
+		}
+	}
+
+	// ok
+	instruct adrs_absidx any{
+		ist==0x0 : par{
+			read(READ_AL, rpb, pc);
+			pc_inc();
+			ist := 0x1;
+		}
+		ist==0x1 : par{
+			read(READ_AH, rpb, pc);
+			pc_inc();
+			ab := rdb;
+			adadd.con(0x00||al, 0x00||a_abs_idx<7:0>, 0b0);
+			al := adadd.dout<7:0>;
+			ad_c := adadd.dout<8>;
+			if(adadd.dout<8> | (^fx) | ((^sw_absidx_mem_off) & a_abs_mem)) ist := 0x2;
+			else ist := 0x6;
+		}
+		ist==0x2 : par{
+			adadd.con(rdb||ah, 0x00||a_abs_idx<15:8>, ad_c);
+			ah := adadd.dout<7:0>;
+			ab := adadd.dout<15:8>;
+			ist := 0x6;
+		}
+	}
+
+	// ok bankにはread_waitで加算
+	instruct adrs_abslngidx any{
+		ist==0x0 : par{
+			read(READ_AL, rpb, pc);
+			pc_inc();
+			ist := 0x1;
+		}
+		ist==0x1 : par{
+			read(READ_AH, rpb, pc);
+			pc_inc();
+			ist := 0x2;
+		}
+		ist==0x2 : par{
+			adadd.con(adrs, rx, 0b0);
+			al := adadd.dout<7:0>;
+			ah := adadd.dout<15:8>;
+			ad_c := adadd.cout;
+			read(READ_AB, rpb, pc);
+			pc_inc();
+			ist := 0x6;
+		}
+	}
+
+	// ok
+	instruct adrs_stkrel any{
+		ist==0x0 : par{
+			read(READ_WL, rpb, pc);
+			pc_inc();
+			ist := 0x1;
+		}
+		ist==0x1 : par{
+			adadd.con(sph||spl, 0x00||wl, 0b0);
+			al := adadd.dout< 7:0>;
+			ah := adadd.dout<15:8>;
+			ab := 0x00;
+			ist := 0x6;
+		}
+	}
+
+	// 2013/07/27 ok
+	instruct adrs_stkrelindidx any{
+		ist==0x0 : par{
+			read(READ_WL, rpb, pc);
+			pc_inc();
+			ist := 0x1;
+		}
+		ist==0x1 : par{
+			adadd.con(sph||spl, 0x00||wl, 0b0);
+			al := adadd.dout< 7:0>;
+			ah := adadd.dout<15:8>;
+			ist := 0x2;
+		}
+		ist==0x2 : par{
+			read(READ_WL, 0x00, adrs);
+			adrs_inc();
+			ist := 0x3;
+		}
+		ist==0x3 : par{
+			read(READ_WH, 0x00, adrs);
+			ab := rdb;
+			adadd.con(0x00||wl, 0x00||ryl, 0b0);
+			al := adadd.dout<7:0>;
+			ad_c := adadd.dout<8>;
+			ist := 0x4;
+		}
+		ist==0x4 : par{
+			adadd.con(rdb||wh, 0x00||ryh, ad_c);
+			ah := adadd.dout<7:0>;
+			ab := adadd.dout<15:8>;
+			ist := 0x6;
+		}
+	}
+
+	// ok
+	instruct adrs_rellng any{
+		ist==0x0 : par{
+			read(READ_AL, rpb, pc);
+			pc_inc();
+			ist := 0x1;
+		}
+		ist==0x1 : par{
+			read(READ_AH, rpb, pc);
+			pc_inc();
+			ist := 0x2;
+		}
+		ist==0x2 : par{
+			adadd.con(pc, adrs, 0b0);
+			al := adadd.dout<7:0>;
+			ah := adadd.dout<15:8>;
+			ist := 0x6;
+		}
+	}
+
+	instruct NMI par{ f_NMI := 0b1; }
+
+	instruct nexti par{
+		alt{
+			f_NMI : par{
+				f_NMI := 0b0;
+				NMI_do := 0b1;
+			}
+			f_IRQ & ^fi : par{
+				IRQ_do := 0b1;
+			}
+			else : par{
+				read(READ_IR, rpb, pc);
+				pc_inc();
+				ir_sync();
+				adrs_wrap := 0;
+			}
+		}
+		ist := 0x0;
+	}
+
+	instruct run par{
+		alt{
+			f_halt : ;
+
+			// 20170918 1-test_exec_from_ioで確認、FFUSAとABANDONも動いた
+			(f_NMI | f_IRQ) & fi_wait_interrupt & (ist==0x2) : par{
+				fi_wait_interrupt := 0b0;
+				pc_inc();
+			}
+
+			NMI_do | IRQ_do | COP_do | BRK_do : generate interrupt.do();
+			else : generate execute.do();
+		}
+	}
+
+	stage interrupt {
+		par{
+			finish;
+			if(fe) halt(0x74);
+			any{
+				ist==0x0 : par{
+					stack_push(rpb);
+					rpb := 0x00;
+					if((COP_do | BRK_do) & ^fe) pc_inc();
+					ist := 0x1;
+				}
+				ist==0x1 : par{
+					stack_push(pch);
+					ist := 0x2;
+				}
+				ist==0x2 : par{
+					stack_push(pcl);
+					ist := 0x3;
+				}
+				ist==0x3 : par{
+					stack_push(state_pack);
+					fi := 0b1;
+				//	if(COP_do | BRK_do) fd := 0b0;
+					fd := 0b0; // 20171114 聖剣3修正
+					ist := 0x4;
+				}
+				ist==0x4 : par{
+					pch := 0xFF;
+					any{
+						NMI_do : pcl := 0xEA;
+						IRQ_do : pcl := 0xEE;
+						COP_do : pcl := 0xE4;
+						BRK_do : pcl := 0xE6;
+					}
+					ist := 0x5;
+				}
+				ist==0x5 : par{
+					read(READ_AL, 0x00, pc);
+					pc_inc();
+					ist := 0x6;
+				}
+				ist==0x6 : par{
+					pcl := al;
+					read(READ_PCH, 0x00, pc);
+					ist := 0x7;
+				}
+				ist==0x7 : par{
+					any{
+						NMI_do : NMI_do := 0b0;
+						IRQ_do : IRQ_do := 0b0;
+					}
+					nexti();
+				}
+
+			}
+		}
+	}
+
+	stage execute {
+		par{
+		finish;
+		any{
+			I_LDA | I_LDX | I_LDY | 
+			I_ADC | I_SBC | I_AND | I_ORA | I_EOR |
+			I_CMP | I_CPX | I_CPY | I_BIT : any{
+				(ir==0xA9) | (ir==0x29) | (ir==0xC9) | (ir==0x69) | (ir==0xE9) | (ir==0x09) | (ir==0x49) | (ir==0x89) : adrs_imm(fm);
+				(ir==0xA2) | (ir==0xA0) | (ir==0xE0) | (ir==0xC0) : adrs_imm(fx);
+				(ir==0xA5) | (ir==0xA6) | (ir==0xA4) | (ir==0xE4) | (ir==0x45) | (ir==0x05) | (ir==0x65) | (ir==0xE5) | (ir==0xC5) | (ir==0x25) | (ir==0xC4) | (ir==0x24) : adrs_dir();
+				(ir==0xB5) | (ir==0x75) | (ir==0x35) | (ir==0xB4) | (ir==0xD5) | (ir==0xF5) | (ir==0x15) | (ir==0x55) | (ir==0x34) : adrs_diridx(rx);
+				(ir==0xB6) : adrs_diridx(ry);
+				(ir==0xA1) | (ir==0x41) | (ir==0xE1) | (ir==0xC1) | (ir==0x61) | (ir==0x21) | (ir==0x01) : adrs_diridxind();
+				(ir==0xB2) | (ir==0x72) | (ir==0x12) | (ir==0xD2) | (ir==0xF2) | (ir==0x32) | (ir==0x52) : adrs_dirind();
+				(ir==0xA7) | (ir==0x07) | (ir==0x67) | (ir==0xE7) | (ir==0xC7) | (ir==0x27) | (ir==0x47) : adrs_dirindlng();
+				(ir==0xB1) | (ir==0x31) | (ir==0xD1) | (ir==0x11) | (ir==0x71) | (ir==0x51) | (ir==0xF1) : adrs_dirindidx();
+				(ir==0xB7) | (ir==0x77) | (ir==0x17) | (ir==0xD7) | (ir==0x37) | (ir==0xF7) | (ir==0x57) : adrs_dirindlngidx();
+				(ir==0xAD) | (ir==0x6D) | (ir==0xCD) | (ir==0xAE) | (ir==0x2D) | (ir==0x4D) | (ir==0x0D) | (ir==0xAC) | (ir==0xEC) | (ir==0x2C) | (ir==0xED) | (ir==0xCC) : adrs_abs();
+				(ir==0xBD) | (ir==0xBC) | (ir==0xDD) | (ir==0xFD) | (ir==0x7D) | (ir==0x3D) | (ir==0x1D) | (ir==0x3C) | (ir==0x5D) : adrs_absidx(rx, 0b0);
+				(ir==0xB9) | (ir==0x19) | (ir==0x39) | (ir==0x79) | (ir==0xD9) | (ir==0xBE) | (ir==0xF9) | (ir==0x59) : adrs_absidx(ry, 0b0);
+				(ir==0x6F) | (ir==0xAF) | (ir==0xCF) | (ir==0x0F) | (ir==0x2F) | (ir==0xEF) | (ir==0x4F) : adrs_abslng();
+				(ir==0xBF) | (ir==0xDF) | (ir==0xFF) | (ir==0x7F) | (ir==0x3F) | (ir==0x1F) | (ir==0x5F) : adrs_abslngidx();
+				(ir==0x63) | (ir==0xA3) | (ir==0xE3) | (ir==0x43) | (ir==0x03) | (ir==0x23) | (ir==0xC3) : adrs_stkrel();
+				(ir==0xB3) | (ir==0xF3) | (ir==0xD3) | (ir==0x73) | (ir==0x33) | (ir==0x53) | (ir==0x13) : adrs_stkrelindidx();
+				ist==0x6 : par{
+					read(READ_WL, ab, adrs);
+					adrs_inc();
+					any{
+						((I_LDA|I_ADC|I_SBC|I_AND|I_ORA|I_EOR|I_CMP|I_BIT)&fm) |
+						((I_LDX|I_LDY|I_CPX|I_CPY)&fx) : ist := 0x8;
+						else : ist := 0x7;
+					}
+				}
+				ist==0x7 : par{
+					read(READ_WH, ab, adrs);
+					ist := 0x8;
+				}
+				ist==0x8 : par{
+					any{
+						I_LDA : par{
+							ral := wl;
+							if(^fm) rah := wh;
+							nz_flags(fm, w);
+						}
+						I_LDX : par{
+							rxl := wl;
+							if(^fx) rxh := wh;
+							nz_flags(fx, w);
+						}
+						I_LDY : par{
+							ryl := wl;
+							if(^fx) ryh := wh;
+							nz_flags(fx, w);
+						}
+						I_ADC : par{
+							if(fe | fm){
+								if(fd){
+									alu_bcd.add(0x00||ral, 0x00||wl, fc);
+									ral := alu_bcd.dout<7:0>;
+									fc := alu_bcd.cout8;
+									nz_flags(0b1, alu_bcd.dout);
+									fv := (^(ral<7>@wl<7>)) & (ral<7>@alu_bcd.dout<7>); // 20171105
+								}
+								else{
+									add.con(0x00||ral, 0x00||wl, fc);
+									ral := add.dout<7:0>;
+									fc := add.dout<8>;
+									nz_flags(0b1, add.dout);
+									fv := (^(ral<7>@wl<7>)) & (ral<7>@add.dout<7>); // 20171105
+								}
+							}
+							else{
+								if(fd){
+									alu_bcd.add(ra, w, fc);
+									ral := alu_bcd.dout<7:0>;
+									rah := alu_bcd.dout<15:8>;
+									fc := alu_bcd.cout16;
+									nz_flags(0b0, alu_bcd.dout);
+									fv := (^(ra<15>@w<15>)) & (ra<15>@alu_bcd.dout<15>); // 20171105
+								}
+								else{
+									add.con(ra, w, fc);
+									ral := add.dout<7:0>;
+									rah := add.dout<15:8>;
+									fc := add.cout;
+									nz_flags(0b0, add.dout);
+									fv := (^(ra<15>@w<15>)) & (ra<15>@add.dout<15>); // 20171105
+								}
+							}
+						}
+						I_SBC : par{
+							if(fe | fm){
+								if(fd){
+									alu_bcd.sub(0x00||ral, 0x00||wl, fc);
+									ral := alu_bcd.dout<7:0>;
+									fc := alu_bcd.cout8;
+									nz_flags(0b1, alu_bcd.dout);
+									fv := (^(ral<7>@wl<7>)) & (ral<7>@alu_bcd.dout<7>);
+								}
+								else{
+									add.con(0x00||ral, 0x00||(^wl), fc);
+									ral := add.dout<7:0>;
+									fc := add.dout<8>;
+									nz_flags(0b1, add.dout);
+									fv := (^(ral<7>@wl<7>)) & (ral<7>@add.dout<7>); // 20171105
+								}
+							}
+							else{
+								if(fd){
+									alu_bcd.sub(ra, w, fc);
+									ral := alu_bcd.dout<7:0>;
+									rah := alu_bcd.dout<15:8>;
+									fc := alu_bcd.cout16;
+									nz_flags(0b0, alu_bcd.dout);
+									fv := (^(ra<15>@w<15>)) & (ra<15>@alu_bcd.dout<15>); // 20171105
+								}
+								else{
+									add.con(ra, ^w, fc);
+									ral := add.dout<7:0>;
+									rah := add.dout<15:8>;
+									fc := add.cout;
+									nz_flags(0b0, add.dout);
+									fv := (^(ra<15>@w<15>)) & (ra<15>@add.dout<15>); // 20171105
+								}
+							}
+						}
+						I_AND : par{
+							ral := ral & wl;
+							if(^fm) rah := rah & wh;
+							nz_flags(fm, ra & w);
+						}
+						I_ORA : par{
+							ral := ral | wl;
+							if(^fm) rah := rah | wh;
+							nz_flags(fm, ra | w);
+						}
+						I_EOR : par{
+							ral := ral @ wl;
+							if(^fm) rah := rah @ wh;
+							nz_flags(fm, ra @ w);
+						}
+						I_CMP : par{
+							if(fm){
+								add.con(0x00||ral, 0x00||(^wl), 0b1); // 0x00でok
+								fc := add.dout<8>;
+							}
+							else{
+								add.con(ra, ^w, 0b1);
+								fc := add.cout;
+							}
+							nz_flags(fm, add.dout);
+						}
+						I_CPX : par{
+							if(fx){
+								add.con(0x00||rxl, 0x00||(^wl), 0b1);
+								fc := add.dout<8>;
+							}
+							else{
+								add.con(rx, ^w, 0b1);
+								fc := add.cout;
+							}
+							nz_flags(fx, add.dout);
+						}
+						I_CPY : par{
+							if(fx){
+								add.con(0x00||ryl, 0x00||(^wl), 0b1);
+								fc := add.dout<8>;
+							}
+							else{
+								add.con(ry, ^w, 0b1);
+								fc := add.cout;
+							}
+							nz_flags(fx, add.dout);
+						}
+						I_BIT : any{
+							ir==0x89 : par{
+								if(fm) fz := (ral&wl)==0x00;
+								else   fz := (ra&w)==0x0000;
+							}
+							else : par{
+								if(fm){
+									fv := wl<6>;
+									fn := wl<7>;
+									fz := (ral&wl)==0x00;
+								}
+								else{
+									fv := wh<6>;
+									fn := wh<7>;
+									fz := (ra&w)==0x0000;
+								}
+							}
+						}
+					}
+					nexti();
+				}
+			}
+
+			I_STA | I_STX | I_STY | I_STZ : any{
+				(ir==0x86) | (ir==0x85) | (ir==0x84) | (ir==0x64) : adrs_dir();
+				(ir==0x95) | (ir==0x74) | (ir==0x94) : adrs_diridx(rx);
+				(ir==0x96) : adrs_diridx(ry);
+				(ir==0x81) : adrs_diridxind();
+				(ir==0x92) : adrs_dirind();
+				(ir==0x91) : adrs_dirindidx();
+				(ir==0x87) : adrs_dirindlng();
+				(ir==0x97) : adrs_dirindlngidx();
+				(ir==0x8D) | (ir==0x8E) | (ir==0x8C) | (ir==0x9C) : adrs_abs();
+				(ir==0x9D) | (ir==0x9E) : adrs_absidx(rx, 0b0);
+				(ir==0x99) : adrs_absidx(ry, 0b0);
+				(ir==0x8F) : adrs_abslng();
+				(ir==0x9F) : adrs_abslngidx();
+				(ir==0x83) : adrs_stkrel();
+				(ir==0x93) : adrs_stkrelindidx();
+				ist==0x6 : par{
+					any{
+						I_STA : write(ab, adrs, ral);
+						I_STX : write(ab, adrs, rxl);
+						I_STY : write(ab, adrs, ryl);
+						I_STZ : write(ab, adrs, 0x00);
+					}
+					adrs_inc();
+					any{
+						((I_STA|I_STZ) & fm) | ((I_STX|I_STY) & fx) : ist := 0xA;
+						else : ist := 0x9;
+					}
+				}
+				ist==0x9 : par{
+					any{
+						I_STA : write(ab, adrs, rah);
+						I_STX : write(ab, adrs, rxh);
+						I_STY : write(ab, adrs, ryh);
+						I_STZ : write(ab, adrs, 0x00);
+					}
+					ist := 0xA;
+				}
+				ist==0xA : nexti();
+			}
+
+			I_INCA | I_INX | I_DEX | I_INY | I_DEY | I_DECA : any{
+				ist==0x0 : par{
+					any{
+						I_INCA : add.con(ra, 0x0001, 0b0);
+						I_DECA : add.con(ra, 0xFFFF, 0b0);
+						I_INX : add.con(rx, 0x0001, 0b0);
+						I_DEX : add.con(rx, 0xFFFF, 0b0);
+						I_INY : add.con(ry, 0x0001, 0b0);
+						I_DEY : add.con(ry, 0xFFFF, 0b0);
+					}
+					any{
+						I_INCA | I_DECA : par{
+							ral := add.dout<7:0>;
+							if(^fm) rah := add.dout<15:8>;
+						}
+						I_INX | I_DEX : par{
+							rxl := add.dout<7:0>;
+							if(^fx) rxh := add.dout<15:8>;
+						}
+						I_INY | I_DEY : par{
+							ryl := add.dout<7:0>;
+							if(^fx) ryh := add.dout<15:8>;
+						}
+					}
+					ist := 0xA;
+				}
+				ist==0xA : par{
+					any{
+						I_INCA | I_DECA : nz_flags(fm, ra);
+						I_INX | I_DEX : nz_flags(fx, rx);
+						I_INY | I_DEY : nz_flags(fx, ry);
+					}
+					nexti();
+				}
+			}
+
+			I_LSRA | I_ROLA | I_ASLA | I_RORA : any{
+				ist==0x0 : par{
+					any{
+						I_LSRA : par{
+							if(fm) wl := 0b0    || ral<7:1>;
+							else   wl := rah<0> || ral<7:1>;
+							wh := 0b0 || rah<7:1>;
+							fc := ral<0>;
+						}
+						I_RORA : par{
+							if(fm) wl := fc     || ral<7:1>;
+							else   wl := rah<0> || ral<7:1>;
+							wh := fc || rah<7:1>;
+							fc := ral<0>;
+						}
+						I_ROLA : par{
+							wl := ral<6:0> || fc;
+							wh := rah<6:0> || ral<7>;
+							if(fm) fc := ral<7>;
+							else   fc := rah<7>;
+						}
+						I_ASLA : par{
+							wl := ral<6:0> || 0b0;
+							wh := rah<6:0> || ral<7>;
+							if(fm) fc := ral<7>;
+							else   fc := rah<7>;
+						}
+					}
+					ist := 0xA;
+				}
+				ist==0xA : par{
+					ral := wl;
+					if(^fm) rah := wh;
+					nz_flags(fm, w);
+					nexti();
+				}
+			}
+
+			I_LSRM | I_ROLM | I_RORM | I_ASLM | I_DECM | I_INCM | I_TSB | I_TRB : any{
+				(ir==0x46) | (ir==0x26) | (ir==0xC6) | (ir==0xE6) | (ir==0x06) | (ir==0x04) | (ir==0x14) | (ir==0x66) : adrs_dir();
+				(ir==0xD6) | (ir==0xF6) | (ir==0x36) | (ir==0x16) | (ir==0x56) | (ir==0x76) : adrs_diridx(rx);
+				(ir==0xEE) | (ir==0xCE) | (ir==0x0E) | (ir==0x0C) | (ir==0x4E) | (ir==0x1C) | (ir==0x6E) | (ir==0x2E) : adrs_abs();
+				(ir==0xDE) | (ir==0xFE) | (ir==0x7E) | (ir==0x5E) | (ir==0x1E) | (ir==0x3E) : adrs_absidx(rx, 0b1); // 1クロック追加必須
+				ist==0x6 : par{
+					read(READ_WL, ab, adrs);
+					if(fm) ist := 0x8;
+					else{
+						adrs_inc();
+						ist := 0x7;
+					}
+				}
+				ist==0x7 : par{
+					read(READ_WH, ab, adrs);
+					ist := 0x8;
+				}
+				ist==0x8 : par{
+					any{
+						I_LSRM : par{
+							if(fm) wl := 0b0   || wl<7:1>;
+							else   wl := wh<0> || wl<7:1>;
+							wh := 0b0 || wh<7:1>;
+							fc := wl<0>;
+						}
+						I_ROLM : par{
+							wl := wl<6:0> || fc;
+							wh := wh<6:0> || wl<7>;
+							if(fm) fc := wl<7>;
+							else   fc := wh<7>;
+						}
+						I_RORM : par{
+							if(fm) wl := fc    || wl<7:1>;
+							else   wl := wh<0> || wl<7:1>;
+							wh := fc || wh<7:1>;
+							fc := wl<0>;
+						}
+						I_ASLM : par{
+							wl := wl<6:0> || 0b0;
+							wh := wh<6:0> || wl<7>;
+							if(fm) fc := wl<7>;
+							else   fc := wh<7>;
+						}
+						I_DECM : par{
+							add.con(w, 0xFFFF, 0b0);
+							wl := add.dout<7:0>;
+							wh := add.dout<15:8>;
+						}
+						I_INCM : par{
+							add.con(w, 0x0001, 0b0);
+							wl := add.dout<7:0>;
+							wh := add.dout<15:8>;
+						}
+						I_TSB : par{
+							if(fm) fz := (wl&ral)==0x00;
+							else   fz := (w&ra)==0x0000;
+							wl := wl | ral;
+							wh := wh | rah;
+						}
+						I_TRB : par{
+							if(fm) fz := (wl&ral)==0x00;
+							else   fz := (w&ra)==0x0000;
+							wl := wl & (^ral);
+							wh := wh & (^rah);
+						}
+					}
+					if(fm) ist := 0xA;
+					else   ist := 0x9;
+				}
+				ist==0x9 : par{
+					write(ab, adrs, wh);
+					adrs_dec();
+					ist := 0xA;
+				}
+				ist==0xA : par{
+					if(^(I_TSB | I_TRB)) nz_flags(fm, w);
+					write(ab, adrs, wl);
+					ist := 0xB;
+				}
+				ist==0xB : nexti();
+			}
+
+			// JMP
+			// JMP abs ind
+			// JMP index indirect
+			(ir==0x4C) | (ir==0x6C) | (ir==0x7C) : any{
+				ist==0x0 : par{
+					read(READ_AL, rpb, pc);
+					pc_inc();
+					ist := 0x1;
+				}
+				(ir==0x4C) : any{
+					ist==0x1 : par{
+						pcl := al;
+						read(READ_PCH, rpb, pc);
+						ist := 0xA;
+					}
+				}
+				(ir==0x6C) : any{
+					ist==0x1 : par{
+						read(READ_AH, rpb, pc);
+						ist := 0x7;
+					}
+					ist==0x7 : par{
+						read(READ_WL, 0x00, adrs);
+						adrs_inc();
+						ist := 0x8;
+					}
+					ist==0x8 : par{
+						pcl := wl;
+						read(READ_PCH, 0x00, adrs);
+						ist := 0xA;
+					}
+				}
+				(ir==0x7C) : any{
+					ist==0x1 : par{
+						read(READ_AH, rpb, pc);
+						ist := 0x6;
+					}
+					ist==0x6 : par{
+						adadd.con(adrs, rx, 0b0);
+						al := adadd.dout<7:0>;
+						ah := adadd.dout<15:8>;
+						ist := 0x7;
+					}
+					ist==0x7 : par{
+						read(READ_WL, rpb, adrs);
+						adrs_inc();
+						ist := 0x8;
+					}
+					ist==0x8 : par{
+						pcl := wl;
+						read(READ_PCH, rpb, adrs);
+						ist := 0xA;
+					}
+				}
+				ist==0xA : nexti();
+			}
+
+			// JML indirect
+			// JML absolute long
+			(ir==0xDC) | (ir==0x5C) : any{
+				ist==0x0 : par{
+					read(READ_AL, rpb, pc);
+					pc_inc();
+					ist := 0x1;
+				}
+				ist==0x1 : par{
+					read(READ_AH, rpb, pc);
+					pc_inc();
+					ist := 0x2;
+				}
+				(ir==0x5C) : any{
+					ist==0x2 : par{
+						pch := ah;
+						pcl := al;
+						read(READ_PB, rpb, pc);
+						ist := 0x5;
+					}
+				}
+				(ir==0xDC) : any{
+					ist==0x2 : par{
+						read(READ_WL, 0x00, adrs);
+						adrs_inc();
+						ist := 0x3;
+					}
+					ist==0x3 : par{
+						read(READ_WH, 0x00, adrs);
+						adrs_inc();
+						ist := 0x4;
+					}
+					ist==0x4 : par{
+						pcl := wl;
+						pch := wh;
+						read(READ_PB, 0x00, adrs);
+						ist := 0x5;
+					}
+				}
+				ist==0x5 : nexti();
+			}
+
+			// JSR abs
+			(ir==0x20) : switch(ist){
+				case 0x0: par{
+					read(READ_AL, rpb, pc);
+					pc_inc();
+					ist := 0x3;
+				}
+				case 0x3: par{
+					stack_push(pch);
+					ist := 0x4;
+				}
+				case 0x4: par{
+					stack_push(pcl);
+					ist := 0x7;
+				}
+				case 0x7: ist := 0x8;
+				case 0x8: par{
+					pcl := al;
+					read(READ_PCH, rpb, pc);
+					ist := 0xA;
+				}
+				case 0xA: nexti();
+			}
+
+			// JSR abs long (JSL)
+			(ir==0x22) : switch(ist){
+				case 0x0: par{
+					read(READ_AL, rpb, pc);
+					pc_inc();
+					ist := 0x1;
+				}
+				case 0x1: par{
+					read(READ_AH, rpb, pc);
+					pc_inc();
+					ist := 0x2;
+				}
+				case 0x2: par{
+					stack_push(rpb);
+					ist := 0x3;
+				}
+				case 0x3: par{
+					stack_push(pch);
+					ist := 0x4;
+				}
+				case 0x4: par{
+					stack_push(pcl);
+					ist := 0x7;
+				}
+				case 0x7: par{
+					read(READ_PB, rpb, pc);
+					ist := 0x9;
+				}
+				case 0x9: par{
+					pcl := al;
+					pch := ah;
+					ist := 0xA;
+				}
+				case 0xA: nexti();
+			}
+
+			// JSR abs idx ind
+			(ir==0xFC) : switch(ist){
+				case 0x0: par{
+					read(READ_AL, rpb, pc);
+					pc_inc();
+					ist := 0x3;
+				}
+				case 0x3: par{
+					stack_push(pch);
+					ist := 0x4;
+				}
+				case 0x4: par{
+					stack_push(pcl);
+					ist := 0x5;
+				}
+				case 0x5: par{
+					read(READ_AH, rpb, pc);
+					ist := 0x6;
+				}
+				case 0x6: par{
+					adadd.con(adrs, rx, 0b0);
+					al := adadd.dout<7:0>;
+					ah := adadd.dout<15:8>;
+					ist := 0x7;
+				}
+				case 0x7: par{
+					read(READ_WL, rpb, adrs);
+					adrs_inc();
+					ist := 0x8;
+				}
+				case 0x8: par{
+					pcl := wl;
+					read(READ_PCH, rpb, adrs);
+					ist := 0xA;
+				}
+				case 0xA: nexti();
+			}
+
+			// RTS RTL
+			(ir==0x60) | (ir==0x6B) : any{
+				ist==0x0 : ist := 0x1;
+				ist==0x1 : par{
+					stack_pull(0b0);
+					ist := 0x2;
+				}
+				ist==0x2 : par{
+					stack_pull(0b1);
+					ist := 0x3;
+				}
+				ist==0x3 : par{
+					if(ir<3>) stack_pull(0b0);
+					pch := wh;
+					pcl := wl;
+					ist := 0x4;
+				}
+				ist==0x4 : par{
+					if(ir<3>) rpb := wl;
+					pc_inc();
+					ist := 0x5;
+				}
+				ist==0x5 : nexti();
+			}
+
+			// RTI
+			(ir==0x40) : any{
+				ist==0x0 : par{
+					stack_pull(0b0);
+					ist := 0x1;
+				}
+				ist==0x1 : par{
+					state_expand(wl);
+					stack_pull(0b0);
+					ist := 0x2;
+				}
+				ist==0x2 : par{
+					stack_pull(0b1);
+					ist := 0x3;
+				}
+				ist==0x3 : par{
+					if(^fe) stack_pull(0b0);
+					pch := wh;
+					pcl := wl;
+					ist := 0x4;
+				}
+				ist==0x4 : par{
+					if(^fe) rpb := wl;
+					ist := 0x5;
+				}
+				ist==0x5 : nexti();
+			}
+
+			I_SEI | I_CLI | I_CLC | I_SEC | I_CLD | I_SED | I_CLV | I_XCE | I_NOP |
+			I_TAY | I_TYA | I_TAX | I_TXA | I_TXY | I_TYX | I_TXS | I_TSX | I_TCD | I_TDC | I_TCS | I_TSC : any{
+				ist==0x0 : par{
+					any{
+						I_SEI : fi := 0b1;
+						I_CLI : fi := 0b0;
+						I_CLC : fc := 0b0;
+						I_SED : fd := 0b1;
+						I_CLD : fd := 0b0;
+						I_SEC : fc := 0b1;
+						I_CLV : fv := 0b0;
+						I_XCE : par{
+							if(fc){
+								fm := 0b1;
+								fx := 0b1;
+								sph := 0x01;
+							}
+							fc := fe;
+							fe := fc;
+							if(fc | fx){
+								rxh := 0x00;
+								ryh := 0x00;
+							}
+						}
+						I_TAY : par{
+							ryl := ral;
+							if(^fx) ryh := rah;
+							nz_flags(fx, ra);
+						}
+						I_TYA : par{
+							ral := ryl;
+							if(^fm) rah := ryh;
+							nz_flags(fm, ry);
+						}
+						I_TAX : par{
+							rxl := ral;
+							if(^fx) rxh := rah;
+							nz_flags(fx, ra);
+						}
+						I_TXA : par{
+							ral := rxl;
+							if(^fm) rah := rxh;
+							nz_flags(fm, rx);
+						}
+						I_TXY : par{
+							ryl := rxl;
+							if(^fx) ryh := rxh;
+							nz_flags(fx, rx);
+						}
+						I_TYX : par{
+							rxl := ryl;
+							if(^fx) rxh := ryh;
+							nz_flags(fx, ry);
+						}
+						I_TXS : par{
+							if(fe) halt(0x12);
+							spl := rxl;
+							if(fe) sph := 0x01;
+							else   sph := rxh;
+							nz_flags(fe, rx);
+						}
+						I_TSX : par{
+							rxl := spl;
+							if(^fx) rxh := sph;
+							nz_flags(fx, sph||spl);
+						}
+						I_TCD : par{
+							dir := ra;
+							nz_flags(0b0, ra);
+						}
+						I_TDC : par{
+							ral := dir<7:0>;
+							rah := dir<15:8>;
+							nz_flags(0b0, dir);
+						}
+						I_TCS : par{
+							spl := ral;
+							if(fe) sph := 0x01;
+							else   sph := rah;
+							// no flags affected
+						}
+						I_TSC : par{
+							ral := spl;
+							rah := sph;
+							nz_flags(0b0, sph||spl);
+						}
+						I_NOP : ;
+					}
+					ist := 0x1;
+				}
+				ist==0x1 : nexti();
+			}
+
+			I_REP | I_SEP : any{
+				ist==0x0 : par{
+					read(READ_WL, rpb, pc);
+					pc_inc();
+					ist := 0x1;
+				}
+				ist==0x1 : par{
+					any{
+						wl<7> : fn := ir<5>;
+						wl<6> : fv := ir<5>;
+						wl<5> & (^fe) : fm := ir<5>;
+						wl<4> & (^fe) : fx := ir<5>;
+						fe : par{ fm := 0b1; fx := 0b1; }
+						wl<3> : fd := ir<5>;
+						wl<2> : fi := ir<5>;
+						wl<1> : fz := ir<5>;
+						wl<0> : fc := ir<5>;
+					}
+					if(fe | (wl<4>&ir<5>)){
+						rxh := 0x00;
+						ryh := 0x00;
+					}
+					ist := 0x2;
+				}
+				ist==0x2 : nexti();
+			}
+
+			I_XBA : any{
+				ist==0x0 : ist := 0x1;
+				ist==0x1 : par{
+					ral := rah;
+					rah := ral;
+					ist := 0x2;
+				}
+				ist==0x2 : par{
+					nz_flags(0b1, ra);
+					nexti();
+				}
+			}
+
+			I_WAI : any{
+				ist==0x0 : ist := 0x1;
+				ist==0x1 : par{
+					fi_wait_interrupt := 0b1;
+					pc_dec();
+					ist := 0x2;
+				}
+				ist==0x2 : nexti();
+			}
+
+			I_MVN | I_MVP : any{
+				ist==0x0 : par{
+				//	if(fe | fx) halt(0x43);
+					read(READ_WL, rpb, pc);
+					pc_inc();
+					ist := 0x1;
+				}
+				ist==0x1 : par{
+					rdb := wl;
+					read(READ_WH, rpb, pc);
+					pc_inc();
+					ist := 0x2;
+				}
+				ist==0x2 : par{
+					read(READ_WL, wh, rx);
+
+					if(ir<4>) add.con(rx, 0x0001, 0b0);
+					else      add.con(rx, 0xFFFF, 0b0);
+					rxl := add.dout<7:0>;
+					if(^fx) rxh := add.dout<15:8>;
+
+					ist := 0x3;
+				}
+				ist==0x3 : par{
+					write(rdb, ry, wl);
+
+					if(ir<4>) add.con(ry, 0x0001, 0b0);
+					else      add.con(ry, 0xFFFF, 0b0);
+					ryl := add.dout<7:0>;
+					if(^fx) ryh := add.dout<15:8>;
+
+					ist := 0x4;
+				}
+				ist==0x4 : par{
+					add.con(ra, 0xFFFF, 0b0);
+					ral := add.dout<7:0>;
+					rah := add.dout<15:8>;
+					ist := 0x5;
+				}
+				ist==0x5 : par{
+					if(ra!=0xFFFF){
+						pcadd.con(pc, 0xFFFD, 0b0); // -3
+						pch := pcadd.dout<15:8>;
+						pcl := pcadd.dout< 7:0>;
+					}
+					ist := 0x6;
+				}
+				ist==0x6 : nexti();
+			}
+
+			I_BNE | I_BEQ | I_BRA | I_BMI | I_BPL | I_BCS | I_BCC | I_BVS | I_BVC : any{
+				ist==0x0 : par{
+					read(READ_WL, rpb, pc);
+					pc_inc();
+					ist := 0x1;
+				}
+				ist==0x1 : par{
+					sel branch_flag;
+					any{
+						I_BCC : branch_flag = ^fc;
+						I_BCS : branch_flag = fc;
+						I_BEQ : branch_flag = fz;
+						I_BMI : branch_flag = fn;
+						I_BNE : branch_flag = ^fz;
+						I_BPL : branch_flag = ^fn;
+						I_BVC : branch_flag = ^fv;
+						I_BVS : branch_flag = fv;
+						I_BRA : branch_flag = 0b1;
+					}
+					if(branch_flag){
+					//	pcadd.con(pc, (8#wl<7>)||wl, 0b0);
+						pcadd.con(pc, 16#wl, 0b0);
+						pch := pcadd.dout<15:8>;
+						pcl := pcadd.dout< 7:0>;
+						ist := 0xA;
+					}
+					else nexti();
+				}
+				ist==0xA : nexti();
+			}
+
+			// BRL
+			(ir==0x82) : switch(ist){
+				case 0x0: par{
+					read(READ_WL, rpb, pc);
+					pc_inc();
+					ist := 0x1;
+				}
+				case 0x1: par{
+					read(READ_WH, rpb, pc);
+					pc_inc();
+					ist := 0x2;
+				}
+				case 0x2: par{
+					adadd.con(pc, w, 0b0);
+					pcl := adadd.dout<7:0>;
+					pch := adadd.dout<15:8>;
+					ist := 0xA;
+				}
+				case 0xA: nexti();
+			}
+
+			I_PHA | I_PHX | I_PHY | I_PHP | I_PHK | I_PHD | I_PHB : any{
+				ist==0x0 : par{
+					any{
+						I_PHA : par{ wh := rah; wl := ral; }
+						I_PHX : par{ wh := rxh; wl := rxl; }
+						I_PHY : par{ wh := ryh; wl := ryl; }
+						I_PHP : wl := state_pack;
+						I_PHK : wl := rpb;
+						I_PHD : par{ wh := dir<15:8>; wl := dir<7:0>; }
+						I_PHB : wl := rdb;
+					}
+					any{
+						(I_PHA & fm) | ((I_PHX|I_PHY) & fx) | I_PHP | I_PHK | I_PHB : ist := 0x2;
+						else : ist := 0x1;
+					}
+				}
+				ist==0x1 : par{
+					stack_push(wh);
+					ist := 0x2;
+				}
+				ist==0x2 : par{
+					stack_push(wl);
+					ist := 0x3;
+				}
+				ist==0x3 : nexti();
+			}
+
+			I_PEA | I_PEI | I_PER : any{
+				I_PEA : adrs_abs();
+				I_PEI : adrs_dirind();
+				I_PER : adrs_rellng();
+				ist==0x6 : par{
+					stack_push(ah);
+					ist := 0x7;
+				}
+				ist==0x7 : par{
+					stack_push(al);
+					ist := 0x8;
+				}
+				ist==0x8 : nexti();
+			}
+
+			I_PLP | I_PLA | I_PLX | I_PLY | I_PLB | I_PLD : any{
+				ist==0x0 : par{
+				//	wh := 0x00;
+					ist := 0x1;
+				}
+				ist==0x1 : par{
+					stack_pull(0b0); // Low
+					any{
+						(I_PLA & fm) | ((I_PLX|I_PLY) & fx) | I_PLP | I_PLB : ist := 0x3;
+						else : ist := 0x2;
+					}
+				}
+				ist==0x2 : par{
+					stack_pull(0b1); // High
+					ist := 0x3;
+				}
+				ist==0x3 : par{
+					any{
+						I_PLP : par{
+							state_expand(wl);
+							if(wl<4>) par{ rxh := 0x00; ryh := 0x00; }
+						}
+						I_PLA : par{
+							ral := wl;
+							if(^fm) rah := wh;
+							nz_flags(fm, w);
+						}
+						I_PLX : par{
+							rxl := wl;
+							if(^fx) rxh := wh;
+							nz_flags(fx, w);
+						}
+						I_PLY : par{
+							ryl := wl;
+							if(^fx) ryh := wh;
+							nz_flags(fx, w);
+						}
+						I_PLB : par{
+							rdb := wl;
+							nz_flags(0b1, w);
+						}
+						I_PLD : par{
+							dir := w;
+							nz_flags(0b0, w);
+						}
+					}
+					ist := 0x4;
+				}
+				ist==0x4 : nexti();
+			}
+// 未実装 WDM STP
+			else : halt(0xDB);
+		} // ir any
+
+		}
+	} // stage execute
+
+	stage read_wait {
+		if(read_ack){
+			switch(rid_reg){
+				case READ_IR: par{
+					ir := D_in;
+					if(
+						(D_in==0x65) | (D_in==0x75) | // ADC
+						(D_in==0x25) | (D_in==0x35) | // AND
+						(D_in==0x06) | (D_in==0x16) | // ASL
+						(D_in==0x24) | (D_in==0x34) | // BIT
+						(D_in==0x45) | (D_in==0xD5) | // CMP
+						(D_in==0xE4) | // CPX
+						(D_in==0xC4) | // CPY
+						(D_in==0xC6) | (D_in==0xD6) | // DEC
+						(D_in==0x45) | (D_in==0x55) | // EOR
+						(D_in==0xE6) | (D_in==0xF6) | // INC
+						(D_in==0xA5) | (D_in==0xB5) | // LDA
+						(D_in==0xA6) | (D_in==0xB6) | (D_in==0xAE) | (D_in==0xBE) | // LDX
+						(D_in==0xA4) | (D_in==0xB4) | (D_in==0xAC) | (D_in==0xBC) | // LDY
+						(D_in==0x46) | (D_in==0x56) | // LSR
+						(D_in==0x05) | (D_in==0x15) | // ORA
+						(D_in==0x26) | (D_in==0x36) | // ROL
+						(D_in==0x66) | (D_in==0x76) | // ROR
+						(D_in==0xE5) | (D_in==0xF5) | // SBC
+						(D_in==0x85) | (D_in==0x95) | // STA
+						(D_in==0x86) | (D_in==0x96) | (D_in==0x8E) | // STX
+						(D_in==0x84) | (D_in==0x94) | (D_in==0x8C) | // STY
+						(D_in==0x64) | (D_in==0x74) | // STZ
+						(D_in==0x14) | (D_in==0x1C) | // TRB
+						(D_in==0x04) | (D_in==0x0C)   // TSB
+					) adrs_wrap := 1;
+				}
+				case READ_WL: wl := D_in;
+				case READ_WH: wh := D_in;
+				case READ_AL: al := D_in;
+				case READ_AH: ah := D_in;
+				case READ_AB: par{
+					ab := abadd.con(D_in, 0x00, ad_c).dout;
+				}
+			//	case READ_PCL: pcl := D_in;
+				case READ_PCH: pch := D_in;
+				case READ_PB : rpb := D_in;
+				case ASET_DIR: par{
+					diradd.con(dir, 0x00 || D_in, 0b0);
+					ah := diradd.dout<15:8>;
+					al := diradd.dout< 7:0>;
+				}
+				default: finish;
+			}
+
+			finish;
+		}
+	}
+}

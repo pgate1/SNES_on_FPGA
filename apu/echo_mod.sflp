@@ -1,0 +1,268 @@
+
+%i "../fb2/mul_s16.h"
+
+%d READ_LH 0b00
+%d READ_LL 0b01
+%d READ_RH 0b10
+%d READ_RL 0b11
+
+circuit echo_mod
+{
+	input ESA<8>, EDL<4>, EFB<8>, EVOL_L<8>, EVOL_R<8>;
+	input FIR_0<8>, FIR_1<8>, FIR_2<8>, FIR_3<8>, FIR_4<8>, FIR_5<8>, FIR_6<8>, FIR_7<8>;
+	input f_notwrite;
+
+	instrin req;
+	input pre_L<16>, pre_R<16>;
+	reg_wr pre_L_reg<16>, pre_R_reg<16>;
+	output out_L<16>, out_R<16>;
+
+	instrout read_req, write_req;
+	output eA<16>, eDout<8>;
+	input eDin<8>;
+	instrin ack;
+
+	instrin ready;
+	reg_wr f_read_en;
+
+	instrin sw_echo_off;
+
+	reg_wr eA_reg<16>, rid_reg<2> ,eDout_reg<8>;
+	reg_wr e_LH<8>, e_LL<8>, e_RH<8>, e_RL<8>;
+
+	instrself read(rid_sel, eA_sel), write(eA_sel, eDout_sel);
+	sel rid_sel<2>, eA_sel<16>, eDout_sel<8>;
+
+	reg_wr index<13>;
+
+	mul_s16 fb_mul_L, fb_mul_R;
+	mul_s16 vol_mul;
+	reg_wr oflip;
+
+	rega post_buf_L[8]<16>; // 0は使用しない
+	rega post_buf_R[8]<16>;
+	reg_wr post_fir_L<16>, post_fir_R<16>;
+
+	stage_name bucket { task do(); }
+	stage_name read_wait { task do(rid_reg, eA_reg); }
+	stage_name write_wait { task do(eA_reg, eDout_reg); }
+	stage_name FIR_stg { task do(); }
+
+	if(read_wait.do) read_req();
+	if(write_wait.do) write_req();
+
+	eA = eA_reg;
+	eDout = eDout_reg;
+
+	sel post_buf_L<16>, post_buf_R<16>;
+	post_buf_L = e_LH || e_LL;
+	post_buf_R = e_RH || e_RL;
+
+	// エコーフィードバック音量
+	// s16 * s8 -1 = s23
+	fb_mul_L.con(post_fir_L, 16#EFB);
+	fb_mul_R.con(post_fir_R, 16#EFB);
+	// s16 + (s23 - 7 = s16) = s17
+	sel fb_add_L<17>, fb_add_R<17>;
+	fb_add_L = (17#pre_L_reg) + fb_mul_L.dout<23:7>;
+	fb_add_R = (17#pre_R_reg) + fb_mul_R.dout<23:7>;
+
+	// エコーバッファへの入力
+	// バッファに入れるためにクリップする必要がある 2014/08/31
+	sel pre_buf_L<16>, pre_buf_R<16>;
+	any{
+		fb_add_L<16:15>==0b10 : pre_buf_L = 0x8000;
+		fb_add_L<16:15>==0b01 : pre_buf_L = 0x7000;
+		else                  : pre_buf_L = fb_add_L<15:0>;
+	}
+	any{
+		fb_add_R<16:15>==0b10 : pre_buf_R = 0x8000;
+		fb_add_R<16:15>==0b01 : pre_buf_R = 0x7000;
+		else                  : pre_buf_R = fb_add_R<15:0>;
+	}
+
+	// エコー合成出力
+	// s16 * s8 -1 = s23 -7 = s16
+	reg_wr out_L_reg<16>, out_R_reg<16>;
+	if(oflip) out_L_reg := vol_mul.con(post_fir_L, 16#EVOL_L).dout<22:7>;
+	else      out_R_reg := vol_mul.con(post_fir_R, 16#EVOL_R).dout<22:7>;
+	oflip := ^oflip;
+
+	out_L = out_L_reg;
+	out_R = out_R_reg;
+
+	instruct ready par{
+		f_read_en := 0b0;
+		// リセットしないとプログラム領域にアクセスしてしまう
+		index := 0;
+	}
+
+	instruct req par{
+		if(^sw_echo_off & ^ready) generate bucket.do();
+		pre_L_reg := pre_L;
+		pre_R_reg := pre_R;
+
+		post_buf_L_1 := post_buf_L;
+		post_buf_R_1 := post_buf_R;
+		post_buf_L_2 := post_buf_L_1;
+		post_buf_R_2 := post_buf_R_1;
+		post_buf_L_3 := post_buf_L_2;
+		post_buf_R_3 := post_buf_R_2;
+		post_buf_L_4 := post_buf_L_3;
+		post_buf_R_4 := post_buf_R_3;
+		post_buf_L_5 := post_buf_L_4;
+		post_buf_R_5 := post_buf_R_4;
+		post_buf_L_6 := post_buf_L_5;
+		post_buf_R_6 := post_buf_R_5;
+		post_buf_L_7 := post_buf_L_6;
+		post_buf_R_7 := post_buf_R_6;
+	}
+
+// SPCデータのエコー情報とは互換性が無いため一周目はreadしない方がよい.
+// (SPC読み込み時に領域をクリアすればよいが、領域が未確定だと対応できない)
+	instruct read par{
+		if(f_read_en) generate read_wait.do(rid_sel, eA_sel);
+	}
+
+	instruct write if(^f_notwrite){
+		generate write_wait.do(eA_sel, eDout_sel);
+	}
+
+	stage bucket {
+		sel buf_adrs<14>;
+		first_state st1;
+		par{
+			buf_adrs = (ESA || 0b000000) + (0b0 || index);
+		}
+		state st1 if(^write_wait.do) par{
+			read(READ_LH, buf_adrs || 0b00);
+			goto st2;
+		}
+		state st2 if(^read_wait.do){
+			read(READ_LL, buf_adrs || 0b01);
+			goto st3;
+		}
+		state st3 if(^read_wait.do){
+			read(READ_RH, buf_adrs || 0b10);
+			goto st4;
+		}
+		state st4 if(^read_wait.do){
+			read(READ_RL, buf_adrs || 0b11);
+			goto st5;
+		}
+		state st5 if(^read_wait.do){
+			write(buf_adrs || 0b00, pre_buf_L<15:8>);
+			goto st6;
+		}
+		state st6 if(^write_wait.do){
+			write(buf_adrs || 0b01, pre_buf_L<7:0>);
+			goto st7;
+		}
+		state st7 if(^write_wait.do){
+			write(buf_adrs || 0b10, pre_buf_R<15:8>);
+			goto st8;
+		}
+		state st8 if(^write_wait.do){
+			write(buf_adrs || 0b11, pre_buf_R<7:0>);
+
+			sel index_next<13>;
+			index_next = index + 1;
+			if(index_next<12:9>==EDL){ // EDL<4>
+				index := 0;
+				f_read_en := 0b1;
+			}
+			else index := index_next;
+
+			goto st1;
+			generate FIR_stg.do();
+			finish;
+		}
+	}
+
+	stage read_wait {
+		if(ack){
+			switch(rid_reg){
+			case READ_LH: e_LH := eDin;
+			case READ_LL: e_LL := eDin;
+			case READ_RH: e_RH := eDin;
+			case READ_RL: e_RL := eDin;
+			}
+			finish;
+		}
+	}
+
+	stage write_wait {
+		if(ack){
+			finish;
+		}
+	}
+
+	stage FIR_stg {
+		mul_s16 fir_mul_L, fir_mul_R;
+		reg_wr fir_add_L<19>, fir_add_R<19>;
+		first_state st0;
+		state st0 par{
+			// s16 * s8 -1 = s23 -7 = s16
+			fir_add_L := 19#fir_mul_L.con(post_buf_L, 16#FIR_0).dout<22:7>;
+			fir_add_R := 19#fir_mul_R.con(post_buf_R, 16#FIR_0).dout<22:7>;
+			goto st1;
+		}
+		state st1 par{
+			// s16 * s8 -1 = s23 -7 = s16
+			fir_add_L += 19#fir_mul_L.con(post_buf_L_1, 16#FIR_1).dout<22:7>;
+			fir_add_R += 19#fir_mul_R.con(post_buf_R_1, 16#FIR_1).dout<22:7>;
+			goto st2;
+		}
+		state st2 par{
+			// s16 * s8 -1 = s23 -7 = s16
+			fir_add_L += 19#fir_mul_L.con(post_buf_L_2, 16#FIR_2).dout<22:7>;
+			fir_add_R += 19#fir_mul_R.con(post_buf_R_2, 16#FIR_2).dout<22:7>;
+			goto st3;
+		}
+		state st3 par{
+			// s16 * s8 -1 = s23 -7 = s16
+			fir_add_L += 19#fir_mul_L.con(post_buf_L_3, 16#FIR_3).dout<22:7>;
+			fir_add_R += 19#fir_mul_R.con(post_buf_R_3, 16#FIR_3).dout<22:7>;
+			goto st4;
+		}
+		state st4 par{
+			// s16 * s8 -1 = s23 -7 = s16
+			fir_add_L += 19#fir_mul_L.con(post_buf_L_4, 16#FIR_4).dout<22:7>;
+			fir_add_R += 19#fir_mul_R.con(post_buf_R_4, 16#FIR_4).dout<22:7>;
+			goto st5;
+		}
+		state st5 par{
+			// s16 * s8 -1 = s23 -7 = s16
+			fir_add_L += 19#fir_mul_L.con(post_buf_L_5, 16#FIR_5).dout<22:7>;
+			fir_add_R += 19#fir_mul_R.con(post_buf_R_5, 16#FIR_5).dout<22:7>;
+			goto st6;
+		}
+		state st6 par{
+			// s16 * s8 -1 = s23 -7 = s16
+			fir_add_L += 19#fir_mul_L.con(post_buf_L_6, 16#FIR_6).dout<22:7>;
+			fir_add_R += 19#fir_mul_R.con(post_buf_R_6, 16#FIR_6).dout<22:7>;
+			goto st7;
+		}
+		state st7 par{
+			// s16 * s8 -1 = s23 -7 = s16
+			fir_add_L += 19#fir_mul_L.con(post_buf_L_7, 16#FIR_7).dout<22:7>;
+			fir_add_R += 19#fir_mul_R.con(post_buf_R_7, 16#FIR_7).dout<22:7>;
+			goto st8;
+		}
+		state st8 par{
+			any{
+				fir_add_L<18:15>==0b1110 : post_fir_L := 0x8000;
+				fir_add_L<18:15>==0b0001 : post_fir_L := 0x7FFF;
+				else                     : post_fir_L := fir_add_L<15:0>;
+			}
+			any{
+				fir_add_R<18:15>==0b1110 : post_fir_R := 0x8000;
+				fir_add_R<18:15>==0b0001 : post_fir_R := 0x7FFF;
+				else                     : post_fir_R := fir_add_R<15:0>;
+			}
+			goto st0;
+			finish;
+		}
+	}
+
+}

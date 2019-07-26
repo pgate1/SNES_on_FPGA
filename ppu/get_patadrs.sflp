@@ -1,0 +1,36 @@
+
+circuit get_patadrs
+{
+	input chr_base<3>, col_depth<2>, name_sel<2>, chr_id<10>;
+	input pat_x_tile<3>, pat_y_tile<3>, pat_y<3>, pat_sel<2>;
+	instrin con(chr_base, col_depth, name_sel, chr_id, pat_x_tile, pat_y_tile, pat_y, pat_sel);
+	output adrs<15>;
+
+	sel pat_base<12>, a_chr_id<12>, a_pat_tile<9>, adrs_base<15>;
+
+	instruct con par{
+
+		// 色深度でシフト
+		any{
+			col_depth==0b01 : par{ // 4
+				a_chr_id = 0b00 || chr_id;
+				a_pat_tile = 0b00 || pat_y_tile || 0b0 || pat_x_tile;
+			}
+			col_depth==0b10 : par{ // 16
+				a_chr_id = 0b0 || chr_id || 0b0;
+				a_pat_tile = 0b0 || pat_y_tile || 0b0 || pat_x_tile || 0b0;
+			}
+			col_depth==0b11 : par{ // 256
+				a_chr_id = chr_id || 0b00;
+				a_pat_tile = pat_y_tile || 0b0 || pat_x_tile || 0b00;
+			}
+		}
+
+		pat_base = (chr_base||0b000000000) + a_chr_id;
+
+		adrs_base = (pat_base + (0b0 || name_sel || a_pat_tile)) || pat_y;
+
+		// <15>
+		adrs = adrs_base | (0b0000000000 || pat_sel || 0b000);
+	}
+}

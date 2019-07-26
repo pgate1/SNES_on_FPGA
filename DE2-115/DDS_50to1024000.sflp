@@ -1,0 +1,34 @@
+/*
+ 50MHz‚©‚ç1.024MHz‚ğ¶¬‚·‚é
+ ‰ÁZ’l 64  ‚µ‚«‚¢’l 3125  Œë· 0Hz
+*/
+
+circuit DDS_50to1024000
+{
+	sel max<13>, add<7>;
+	reg_wr count<13>;
+	instrout run;
+	sel sa<13>;
+
+	stage_name run_stg { task do(); }
+
+	add = 64;
+	max = 3125;
+
+	sa = count - max;
+	if(sa<12>){ // count < max
+		count += (0b000000 || add);
+	}
+	else{
+		count := sa + (0b000000 || add);
+		generate run_stg.do();
+	}
+
+	stage run_stg {
+		par{
+			run();
+			finish;
+		}
+	}
+
+}

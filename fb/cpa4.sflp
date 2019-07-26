@@ -1,0 +1,37 @@
+
+// Carry Ripple Adder 4 bit
+
+circuit cpa4
+{
+	input in1<4>, in2<4>, cin;
+	output out1<4>, gout, pout, v;
+	instrin con(in1, in2, cin);
+
+	sel g<4>, p<4>, cry<4>;
+
+	g = (in1<3> & in2<3>)
+	 || (in1<2> & in2<2>)
+	 || (in1<1> & in2<1>)
+	 || (in1<0> & in2<0>);
+	p = (in1<3> | in2<3>)
+	 || (in1<2> | in2<2>)
+	 || (in1<1> | in2<1>)
+	 || (in1<0> | in2<0>);
+	cry = (g<2>
+	    | (p<2> & g<1>)
+	    | (p<2> & p<1> & g<0>)
+	    | (p<2> & p<1> & p<0> & cin))
+	   || (g<1>
+	    | (p<1> & g<0>)
+	    | (p<1> & p<0> & cin))
+	   || (g<0>
+	    | (p<0> & cin))
+	   || cin;
+	out1 = in2 @ in1 @ cry;
+	gout = g<3>
+	    | (p<3> & g<2>)
+	    | (p<3> & p<2> & g<1>)
+	    | (p<3> & p<2> & p<1> & g<0>);
+	pout = /&p;
+	v = (gout | (pout & cin) ) @ cry<3>;
+}

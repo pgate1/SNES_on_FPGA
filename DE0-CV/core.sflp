@@ -1,0 +1,709 @@
+
+/*
+	SNES on FPGA feat. DE0-CV
+	Copyright (c) 2017 pgate1
+*/
+
+%i "../../../DE0-CV/chatmask.h"
+%i "../../../DE0-CV/seg7_ctrl.h"
+%i "../../../DE0-CV/sdram_ctrl.h"
+%i "../../../DE0-CV/sdcard_ctrl_sdmode.h"
+%i "../../../hdl/fat16.h"
+%i "../../../DE0-CV/keyboard_ctrl.h"
+%i "../../../DE0-CV/vjtag_uart.h"
+
+%i "../snes_core.h"
+%i "../mem/ram_128kb.h"
+%i "../display.h"
+%i "VGA_ctrl.h"
+%i "../mem/ram_16x32kw.h"
+//%i "DDS_50to5369318.h"
+%i "DDS_50to10738635.h"
+
+%i "../apu/apu_core.h"
+%i "../mem/ram_64kb.h"
+%i "DDS_50to1024000.h"
+%i "dsdac16.h"
+
+%i "../cartridge/cartridge.h"
+
+circuit core
+{
+	input KEY<4>, SW<10>;
+	chatmask kcmask_0, kcmask_1, kcmask_2, kcmask_3;
+	sela btn[4];
+	output LEDR<10>;
+	seg7_ctrl seg7_0, seg7_1, seg7_2, seg7_3, seg7_4, seg7_5;
+	output HEX0<7>, HEX1<7>, HEX2<7>, HEX3<7>, HEX4<7>, HEX5<7>;
+	sel seg<24>;
+//--------------------- SDRAM Interface --------------------
+// 参考 bank<2> adrs<23> data<16>
+	sdram_ctrl sdram;
+	output SDRAM_CSn, SDRAM_WEn, SDRAM_DEn;
+	output SDRAM_RASn, SDRAM_CASn;
+	output SDRAM_BA<2>, SDRAM_ADDR<13>;
+	output SDRAM_LDQM, SDRAM_UDQM;
+	input  SDRAM_Din<16>;
+	output SDRAM_Dout<16>;
+//--------------------- SD_Card Interface ------------------
+	sdcard_ctrl_sdmode sdcard;
+	output SD_CLK;    // SD Card Clock
+	output SD_CMD_en; // SD Card CMD Enable
+	output SD_CMD;    // SD Card Command
+	input  SD_RES;    // SD Card Response
+	input  SD_DAT<4>; // SD Card Data
+	fat16 fat;
+//--------------------- PS/2 -------------------------------
+	input PS2_KBCLK, PS2_KBDAT;
+	keyboard_ctrl kb;
+//--------------------- VGA --------------------------------
+	VGA_ctrl vga;
+	output VGA_HS, VGA_VS;
+	output VGA_R<4>, VGA_G<4>, VGA_B<4>;
+	Display dis;
+//--------------------- SOUND ------------------------------
+	dsdac16 dac_L, dac_R;
+	output Sound_Left, Sound_Right;
+//----------------------------------------------------------
+
+	reg_ws reset;
+
+	reg_wr pA<25>;
+	reg_wr rom_read_ok;
+
+	// SNES
+	snes_core snes;
+	ram_128kb wram;
+	DDS_50to10738635 dds_cpu;
+
+	ram_16x32kw vram;
+//	DDS_50to5369318 dds_ppu;
+	instrself dds_ppu_run;
+
+	reg_wr checksum<8>;
+	reg_wr dbg_reg<8>;
+
+	// APU
+	apu_core apu;
+	ram_64kb apu_wram;
+	reg_ws apu_wram_ack_reg;
+	reg_wr spc_read_ok;
+	DDS_50to1024000 dds_apu;
+
+	cartridge cart;
+
+	mem keys[128];
+
+	vjtag_uart vjtag;
+	reg_wr f_reading_rom, f_reading_spc;
+
+	instrself halt(h_code);
+	sel h_code<8>;
+	reg_wr h_code_reg<8>;
+
+	stage_name card2ram_rom { task do(); }
+	stage_name vjtag2ram_rom { task do(); }
+	stage_name card2ram_spc { task do(); }
+	stage_name vjtag2ram_spc { task do(); }
+	stage_name mem_clean { task do(); }
+	stage_name snes_line { task do(); }
+	stage_name mpu_run { task do(); }
+//	stage_name mod_apu_read_stg { task do(); }
+//	stage_name mod_apu_write_stg { task do(); }
+	stage_name clock25M { task do(); }
+//	stage_name sdram_clean { task do(); }
+	stage_name key2btn { task do(); }
+
+	stage_name wram_ack_stg { task do(); }
+	stage_name vram_ack_stg { task do(); }
+	stage_name apu_wram_ack_stg { task do(); }
+
+	if(reset){
+		reset := 0b0;
+		generate card2ram_rom.do();
+	//	generate sdram_clean.do();
+		generate clock25M.do();
+		generate key2btn.do();
+	}
+
+	par(i=0;i<4;i++){
+		kcmask[i].bin = ^KEY<i>; btn[i] = kcmask[i].bout;
+	}
+
+	if(spc_read_ok){
+		HEX5 = -1;
+		HEX4 = -1;
+		HEX3 = apu.disp_freq_0;
+		HEX2 = apu.disp_freq_1;
+		HEX1 = apu.disp_freq_2;
+		HEX0 = apu.disp_freq_3;
+	}
+	else{
+		if(^rom_read_ok){
+			sel typeLH<14>;
+			switch(cart.bank_type){
+				case 0: typeLH = 0b0111000_1011100; // Lo 0x1C5C
+				case 1: typeLH = 0b1110110_0010000; // Hi 0x3B10
+			}
+			HEX5 = ^typeLH<13:7>;
+			HEX4 = ^typeLH<6:0>;
+		}
+		else{
+			HEX5 = seg7_5.con(seg<23:20>).oSEG;
+			HEX4 = seg7_4.con(seg<19:16>).oSEG;
+		}
+		HEX3 = seg7_3.con(seg<15:12>).oSEG;
+		HEX2 = seg7_2.con(seg<11: 8>).oSEG;
+		HEX1 = seg7_1.con(seg< 7: 4>).oSEG;
+		HEX0 = seg7_0.con(seg< 3: 0>).oSEG;
+	}
+
+	SDRAM_CSn = sdram.CSn;
+	SDRAM_RASn = sdram.RASn;
+	SDRAM_CASn = sdram.CASn;
+	SDRAM_WEn = sdram.WEn;
+	SDRAM_DEn = sdram.DEn;
+	SDRAM_BA = sdram.BA;
+	SDRAM_ADDR = sdram.A;
+	SDRAM_LDQM = sdram.DQM<0>;
+	SDRAM_UDQM = sdram.DQM<1>;
+	SDRAM_Dout = sdram.Dout;
+	sdram.Din = SDRAM_Din;
+
+	SD_CLK    = sdcard.CLK;
+	SD_CMD_en = sdcard.CMD_en;
+	SD_CMD    = sdcard.CMD;
+	sdcard.RES = SD_RES;
+	sdcard.DAT = SD_DAT;
+
+	fat.sack = sdcard.ack;
+	fat.sdata = sdcard.rdata;
+	instruct fat.sread sdcard.read(fat.sadrs);
+/*
+	if(fat.err){
+		halt(0x33);
+		rom_read_ok := 0b0;
+	}
+*/
+	kb.ps2Clk = PS2_KBCLK;
+	kb.ps2Data = PS2_KBDAT;
+
+//	VGA_BLANKn = vga.dis_valid;
+	VGA_HS = vga.h_sync;
+	VGA_VS = vga.v_sync;
+	alt{
+		vga.win_valid : par{
+			VGA_R = dis.r_out<4:1>;
+			VGA_G = dis.g_out<4:1>;
+			VGA_B = dis.b_out<4:1>;
+		}
+		vga.dis_valid : par{
+			// SNES画面外の色（ディスプレイ自動幅調整のため）
+			VGA_R = 0x1;
+			VGA_G = 0x1;
+			VGA_B = 0x1;
+		}
+		else : par{
+			VGA_R = 0x0;
+			VGA_G = 0x0;
+			VGA_B = 0x0;
+		}
+	}
+
+	if(rom_read_ok) generate mpu_run.do();
+
+	// SNESPAD<12> : BYｾﾚｽﾀ ↑↓←→ AXLR
+	snes.pad1P =
+		(keys[0x22] || keys[0x1B] || keys[0x29] || keys[0x5A] || 
+		 keys[0x75] || keys[0x72] || keys[0x6B] || keys[0x74] || 
+		 keys[0x23] || keys[0x24] || keys[0x2D] || keys[0x2C])
+		| (btn_0||0b0||btn_3||btn_1||0b0000||btn_2||0b000);
+	snes.pad2P = /*SW<8>*/0b0 || 0b00000000000; // for RockmanX2 testmode
+
+//	snes.speed = usb.button1<12>;//pad.data_ref<0>;
+//	snes.stop  = usb.button1<13>;//pad.data_ref<1>;
+//	snes.for_DE1 = 0b0;
+//	snes.dbg_set = SW<7:4>;
+//	snes.f_hdma_disable = 0b0;//SW<8>;
+//	snes.swt = SW<7:0>;
+//	if(SW<8>) snes.sw_absidx_mem_off();
+
+	any{
+	//	^KEY<3> : LEDG = 0b0 || snes.dbg<0> || 0b000 || snes.ist_out;
+	//	^KEY<1> : LEDG = 0b0 || apu.ir_out;
+			// core / snes_core / mpu / dma / ppu1 / ppu2 / 0b0 / 0b000;
+		/|h_code_reg | /|snes.f_halts | /|cart.halt_code : LEDR = (/|h_code_reg) || snes.f_halts || (/|cart.halt_code) || 0b00;
+		else : LEDR = 
+			(0b00|| 
+			apu.disp_vold<0> || apu.disp_vold<1> || apu.disp_vold<2> || apu.disp_vold<3> ||
+			apu.disp_vold<4> || apu.disp_vold<5> || apu.disp_vold<6> || apu.disp_vold<7>);
+	}
+
+	any{
+		^KEY<3> : ;//seg = apu.dbg || 0x0000;
+	//	^KEY<2> : seg = apu.halt_code || apu.ir_out || apu.pc_out;
+		^KEY<1> : seg = h_code_reg || snes.halt_code || cart.halt_code;
+		else : alt{
+			^rom_read_ok : seg = 0x00 || pA<22:11> || cart.save_ram_size;
+			else : seg = snes.pc_out;
+		//	else : seg = 0x00 || cart.dbg || snes.dbg;
+		}
+	}
+
+	if((^rom_read_ok) & (^spc_read_ok)) apu.ready();
+//	apu.mute = 0x00;//SW<10> || SW<11> || SW<12> || SW<13> || SW<14> || SW<15> || SW<16> || SW<17>;
+//	apu.sw_intpl = 0b1;//^SW<9>;
+//	apu.sw_echo_on = 0b1;
+
+	// 音量確保のためにdac16を使う
+	sel sound_L_clip<16>, sound_R_clip<16>;
+	any{
+		apu.sound_L<16:15>==0b10 : sound_L_clip = 0x8000;
+		apu.sound_L<16:15>==0b01 : sound_L_clip = 0x7FFF;
+		else                     : sound_L_clip = apu.sound_L<15:0>;
+	}
+	any{
+		apu.sound_R<16:15>==0b10 : sound_R_clip = 0x8000;
+		apu.sound_R<16:15>==0b01 : sound_R_clip = 0x7FFF;
+		else                     : sound_R_clip = apu.sound_R<15:0>;
+	}
+	// 符号付きから符号なしに変換する
+	dac_L.din = (^sound_L_clip<15>) || sound_L_clip<14:0>;
+	dac_R.din = (^sound_R_clip<15>) || sound_R_clip<14:0>;
+	Sound_Left  = dac_L.dout;
+	Sound_Right = dac_R.dout;
+
+//	snes.dbg_in = SW<7:4>;
+
+	instruct halt h_code_reg := h_code;
+
+	cart.sw_romtype = SW<9>;
+
+	cart.A = snes.A;
+	cart.BA = snes.BA;
+	instruct snes.read_rom cart.read();
+	snes.D_in = cart.Dout;
+	snes.ROM_ACK = cart.ack;
+
+	instruct cart.read_rom par{
+		sdram.read(0b00||cart.rom_adrs);
+	}
+	cart.read_rom_data = sdram.rdata<7:0>;
+	cart.read_ack = sdram.ack;
+
+	instruct cart.read_sram par{
+		sdram.read(0b1100000||cart.sram_adrs);
+	}
+	cart.read_sram_data = sdram.rdata<7:0>;
+
+	cart.Din = snes.D_out;
+	instruct snes.write_rom cart.write();
+
+	instruct cart.write_sram par{
+		sdram.write(0b1100000||cart.sram_adrs, 0x00||snes.D_out, 0b01);
+	}
+
+	instruct snes.WRAM_RD par{
+		wram.read(snes.WRAM_ADDR<16:0>);
+		generate wram_ack_stg.do();
+	}
+	snes.WRAM_Dout = wram.D_out;
+	snes.WRAM_ACK = wram_ack_stg.do;
+
+	instruct snes.WRAM_WE par{
+		wram.write(snes.WRAM_ADDR<16:0>, snes.WRAM_Din);
+	}
+
+	instruct snes.VRAM_RD par{
+		vram.read(snes.VRAM_ADDR);
+		generate vram_ack_stg.do();
+	}
+	snes.VRAM_Dout = vram.D_out;
+	snes.VRAM_ACK = vram_ack_stg.do;
+
+	instruct snes.VRAM_WE par{
+		vram.write(snes.VRAM_ADDR, snes.VRAM_Din);
+	}
+
+	instruct snes.VIDEO_enable par{
+		dis.write(snes.cB || snes.cG || snes.cR);
+	}
+
+	instruct snes.mod_apu_read par{
+	//	generate mod_apu_read_stg.do();
+		apu.io_read(snes.apu_A);
+		snes.mod_apu_ack();
+	}
+	snes.apu_Din = apu.io_rport;
+
+	instruct snes.mod_apu_write par{
+	//	generate mod_apu_write_stg.do();
+		apu.io_write(snes.apu_A, snes.apu_Dout); // for HDMA
+	}
+
+	instruct dds_cpu.run par{
+		reg_wr dds_ppu_tim;
+		if(dds_ppu_tim) dds_ppu_run();
+		dds_ppu_tim := ^dds_ppu_tim;
+	}
+
+	// 1.024MHz
+	instruct dds_apu.run par{
+		// SPC700 core
+		if(rom_read_ok | spc_read_ok) apu.spc_run();
+
+		// APUタイマ 64kHz
+		reg_wr timer_timing<4>;
+		timer_timing++;
+		if(/&timer_timing){ // 16分周
+			if(rom_read_ok | spc_read_ok) apu.timer_run();
+		}
+
+		// DSP 128kHz (32kHz×4)
+		reg_wr dsp_timing<3>;
+		dsp_timing++;
+		if(/&dsp_timing){ // 8分周
+			if(rom_read_ok | spc_read_ok) apu.dsp_run();
+		}
+	}
+
+	instruct apu.read_mem_req par{
+		apu_wram.read(apu.A);
+		apu_wram_ack_reg := 0b0;
+		generate apu_wram_ack_stg.do();
+	}
+	apu.D_in = apu_wram.D_out;
+	if(apu_wram_ack_reg | apu.ready) apu.ack();
+
+	instruct apu.write_mem_req par{
+		apu_wram.write(apu.A, apu.D_out);
+		apu_wram_ack_reg := 0b0;
+		generate apu_wram_ack_stg.do();
+	}
+
+	instruct vga.view dis.read();
+
+	instruct vga.snes_hsync par{
+		dis.bank_change();
+		generate snes_line.do();
+	}
+
+	instruct vjtag.recv par{
+		any{
+			(^f_reading_rom) & (^f_reading_spc) : par{
+				if(vjtag.recv_data==0x00) f_reading_rom := 0b1;
+				else f_reading_spc := 0b1;
+			}
+			f_reading_rom : generate vjtag2ram_rom.do();
+			f_reading_spc : generate vjtag2ram_spc.do();
+		}
+	}
+
+	stage mpu_run {
+		reg_wr mpu_timing<3>;
+		par{
+			if(rom_read_ok){
+				if(dds_cpu.run){
+					if(
+						((snes.cpu_speed==2) & (mpu_timing==3)) | // 3.57954500MHz
+						((snes.cpu_speed==1) & (mpu_timing==4)) | // 2.68465875MHz
+						((snes.cpu_speed==0) & (mpu_timing==6))   // 1.78977250MHz
+					){
+						snes.mpu_run();
+						mpu_timing := 1;
+					}
+					else mpu_timing++;
+				}
+			}
+			else mpu_timing := 1;
+			if(0b0) finish;
+		}
+	}
+
+	stage snes_line {
+		reg_wr pixel_count<9>;
+		par{
+			if(dds_ppu_run){
+
+				snes.ppu_run();
+
+				if(pixel_count==341){
+					snes.hsync();
+					pixel_count := 1;
+					finish;
+				}
+				else pixel_count++;
+			}
+		}
+	}
+
+	stage wram_ack_stg {
+		finish;
+	}
+
+	stage vram_ack_stg {
+		finish;
+	}
+
+	stage apu_wram_ack_stg {
+		par{
+			apu_wram_ack_reg := 0b1;
+			finish;
+		}
+	}
+/*
+	stage mod_apu_read_stg {
+		par{
+			snes.mod_apu_ack();
+			finish;
+		}
+	}
+*/
+	stage clock25M {
+		reg_wr clock25M_div;
+		par{
+			clock25M_div := ^clock25M_div;
+			if(clock25M_div /*& rom_read_ok*/) vga.run();
+			if(0b0) finish;
+		}
+	}
+
+	stage key2btn {
+		reg_ws push;
+		par{
+			if(kb.scanok) switch(kb.scancode){
+				case 0xE0: ; // 無視
+				case 0xF0: push := 0b0; // キー離す
+				default: par{
+					keys[kb.scancode<6:0>] := push;
+					push := 0b1;
+				}
+			}
+			if(0b0) finish;
+		}
+	}
+
+	stage card2ram_rom {
+		first_state st1;
+		state st1 if(fat.ack){// & ^sdram_clean.do){
+			rom_read_ok := 0b0;
+			spc_read_ok := 0b0;
+			fat.fopen(0x0||SW<3:0>);
+			goto st3;
+		}
+		state st3 if(fat.ack){
+			fat.read();
+			pA := 0;
+			goto st4;
+		}
+		state st4 if(fat.ack & sdram.ack){
+			if((pA==0) & (fat.fdata=='S')){ // SPC
+				generate card2ram_spc.do();
+				goto st1;
+				finish;
+			}
+
+			sdram.write(pA, 0x00||fat.fdata, 0b01);
+			if((pA&(0b1||0xFFFFE0))==0b0||0x007FC0) cart.check(0b0, pA<4:0>, fat.fdata);
+			if((pA&(0b1||0xFFFFE0))==0b0||0x00FFC0) cart.check(0b1, pA<4:0>, fat.fdata);
+			pA++;
+			fat.read();
+
+			if(pA==(0b0||0x7FFFFF)){
+				cart.set_rom_type(0xFF);
+				goto st8;
+			}
+
+			if(fat.eof) goto st5;
+			else{
+				checksum += fat.fdata;
+			}
+		}
+		state st5 if(fat.ack){ // Read save data.
+			fat.fopen((0x0||SW<3:0>)+1);
+			pA := 0b1100000000000000000000000;
+			goto st6;
+		}
+		state st6 if(fat.ack){
+			fat.read();
+			goto st7;
+		}
+		state st7 if(fat.ack & sdram.ack){
+			sdram.write(pA, 0x00||fat.fdata, 0b01);
+			pA++;
+			fat.read();
+			if(/&pA<16:0>) goto st8;
+		}
+		state st8 par{
+			generate mem_clean.do();
+			finish;
+		}
+	}
+
+	stage vjtag2ram_rom {
+		reg_wr rom_size<24>;
+		first_state st1;
+		finish;
+		state st1 par{
+			rom_read_ok := 0b0;
+			spc_read_ok := 0b0;
+			rom_size := rom_size<23:8> || vjtag.recv_data;
+		//	cart.set_rom_type(0);
+			goto st1_2;
+		}
+		state st1_2 par{
+			snes.soft_reset();
+			apu.soft_reset();
+			cart.init();
+			rom_size := rom_size<23:16> || vjtag.recv_data || rom_size<7:0>;
+			goto st1_3;
+		}
+		state st1_3 par{
+			rom_size := vjtag.recv_data || rom_size<15:0>;
+			pA := 0;
+			goto st4;
+		}
+		state st4 if(sdram.ack){
+			sdram.write(pA, 0x00||vjtag.recv_data, 0b01);
+			if((pA&(0b1||0xFFFFE0))==0b0||0x007FC0) cart.check(0b0, pA<4:0>, vjtag.recv_data);
+			if((pA&(0b1||0xFFFFE0))==0b0||0x00FFC0) cart.check(0b1, pA<4:0>, vjtag.recv_data);
+			pA++;
+
+			if(pA==(0b0||0x7FFFFF)){
+				cart.set_rom_type(0xFF);
+				goto st8;
+			}
+			if(pA<23:0>==(rom_size-1)) goto st8;
+		}
+		state st8 par{
+			generate mem_clean.do();
+			f_reading_rom := 0b0;
+			goto st1;
+		}
+	}
+
+	stage mem_clean { // WRAM Fill
+		first_state st8;
+		state st8 par{
+			pA := 0;
+			goto st9;
+		}
+		state st9 par{
+			wram.write(pA<16:0>, 0x55);
+			apu_wram.write(pA<15:0>, 0x00);
+			pA++;
+			if(/&pA<16:0>) goto st10;
+		}
+		state st10 par{
+			rom_read_ok := 0b1;
+			goto st8;
+			finish;
+		}
+	}
+/*
+	stage sdram_clean {
+		reg_wr cldA<20>;
+		if(sdram.ack){
+			sdram.write(0b00||cldA, 0x00000000, 0b1111);
+			cldA++;
+			if(/&cldA) finish;
+		}
+	}
+*/
+	// SPC read
+	stage card2ram_spc {
+		first_state st_open;
+		state st_open if(fat.ack){
+			spc_read_ok := 0b0;
+			rom_read_ok := 0b0;
+			apu.soft_reset();
+			fat.fopen(SW<7:0>);
+			pA := 0;
+			goto st_spcr;
+		}
+		state st_spcr if(fat.ack){
+			fat.read();
+			goto st_spcw;
+		}
+		state st_spcw if(fat.ack){
+			fat.read();
+			// APUレジスタなど256バイトコピー
+			// 0x20 - 0x2F -> 0xE0 - 0xEF
+			if(pA<7:4>==0x2) apu.set_play(0xE || pA<3:0>, fat.fdata);
+			if(/&pA<7:0>){
+				pA := 0;
+				goto st_memw;
+			}
+			else pA++;
+		}
+		state st_memw if(fat.ack){// & sram.ack){
+			fat.read();
+			// WRAMを0x10000(65536)バイトコピー
+			// 0x00F0 - 0x00FF
+			if(pA<15:4>==0x00F) apu.set_play(0xF || pA<3:0>, fat.fdata);
+			// 0x0000 - 0xFFFF
+		//	sram.write(0x0||pA<15:0>, 0x00||fat.fdata, 0b01);
+			apu_wram.write(pA<15:0>, fat.fdata);
+			pA++;
+			if(/&pA<15:0>) goto st_dspw;
+		}
+		state st_dspw if(fat.ack){
+			fat.read();
+			// DSPレジスタなど128バイトコピー
+			// 0x00 - 0x7F
+			apu.set_play(0b0||pA<6:0>, fat.fdata);
+			pA++;
+			if(/&pA<6:0>) goto st_end;
+		}
+		state st_end par{
+			spc_read_ok := 0b1;
+			finish;
+		}
+	}
+
+	stage vjtag2ram_spc {
+		first_state st_init;
+		finish;
+		state st_init par{
+			spc_read_ok := 0b0;
+			rom_read_ok := 0b0;
+			apu.set_play(0x6C, 0x80); // key off
+			apu.soft_reset();
+			pA := 0;
+			goto st_spcw;
+		}
+		state st_spcw par{
+			// APUレジスタなど256バイトコピー
+			// 0x20 - 0x2F -> 0xE0 - 0xEF
+			if(pA<7:4>==0x2) apu.set_play(0xE || pA<3:0>, vjtag.recv_data);
+			if(/&pA<7:0>){
+				pA := 0;
+				goto st_memw;
+			}
+			else pA++;
+		}
+		state st_memw par{
+			// WRAMを0x10000(65536)バイトコピー
+			// 0x00F0 - 0x00FF
+			if(pA<15:4>==0x00F) apu.set_play(0xF || pA<3:0>, vjtag.recv_data);
+			// 0x0000 - 0xFFFF
+		//	sdram.write(0b000000||pA, 0x00||vjtag.recv_data);
+			apu_wram.write(pA<15:0>, vjtag.recv_data);
+			pA++;
+			if(/&pA<15:0>) goto st_dspw;
+		}
+		state st_dspw par{
+			// DSPレジスタなど128バイトコピー
+			// 0x00 - 0x7F
+			apu.set_play(pA<7:0>, vjtag.recv_data);
+			pA++;
+			if(/&pA<6:0>) goto st_end;
+		}
+		state st_end par{
+			spc_read_ok := 0b1;
+			f_reading_spc := 0b0;
+			goto st_init;
+		}
+	}
+
+}

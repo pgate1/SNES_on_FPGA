@@ -1,0 +1,102 @@
+
+circuit typecheck
+{
+	instrin init;
+
+	input adrs<5>, data<8>;
+	instrin check(adrs, data);
+
+	output ROM_type<8>;
+	reg_wr ROM_type_reg<8>;
+	output BankType<4>;
+	reg_wr BankType_reg<4>;
+	output SRAM_size<4>;
+	reg_wr SRAM_size_reg<4>;
+
+	reg_wr cksum_1C<8>, cksum_1D<8>, cksum_1E<8>;
+
+	reg_wr p1<8>, p2<8>;
+	output point<8>;
+
+	point = p1 + p2;
+
+	ROM_type = ROM_type_reg;
+	BankType = BankType_reg;
+	SRAM_size = SRAM_size_reg;
+
+	instruct init par{
+		p1 := 0;
+		p2 := 0;
+	}
+
+	instruct check par{
+		sel a<8>;
+		a = 0b000 || adrs;
+		any{
+			a==0x10 : p1 := 50;
+			a==0x15 : par{ // RomSpeed
+				if((data<7:4>==0) | (data<7:4>==2) | (data<7:4>==3) | (data<7:4>==4) | (data<7:4>==5)){
+					p1++;
+				}
+				else p1--;
+				// BankType
+				BankType_reg := data<3:0>;
+				if((data<3:0>==0) | (data<3:0>==1) | (data<3:0>==2) | (data<3:0>==3)){
+					p2+=2;
+				}
+				else p2-=2;
+			}
+			a==0x16 : par{ // RomType
+				ROM_type_reg := data;
+				if((data==0) | (data==1) | (data==2) | (data==3) | (data==4) | (data==5) | 
+					(data==19) | (data==20) | (data==21) | (data==26) | (data==32) | (data==53) | 
+					(data==54) | (data==67) | (data==69) | (data==243) | (data==246)){
+					p1++;
+				}
+				else p1-=2;
+			}
+			a==0x17 : par{ // RomSize
+				if((data==7) | (data==8) | (data==9) | (data==10) | (data==11) | (data==12)){
+					p1++;
+				}
+				else p1--;
+			}
+			a==0x18 : par{ // SRAMSize
+				// type=Low(20mode) 0x07FD8
+				// type=Hi (21mode) 0x0FFD8
+				SRAM_size_reg := data<3:0>;
+				if(data<7:3>==0b00000){
+					p1 += 3;
+				}
+				else p1 -= 3;
+			}
+			a==0x19 : par{ // Country
+				if((data==0) | (data==1) |
+					(data==2) | (data==3) | (data==4) | (data==5) |
+					(data==6) | (data==7) | (data==8) | (data==9) |
+					(data==10) | (data==11) | (data==12) | (data==13)){
+					p1+=2;
+				}
+				else p1-=5;
+			}
+			a==0x1B : par{ // Version
+				if((data==0) | (data==2) | (data==3) | (data==4) | (data==5)){
+					p1+=2;
+				}
+				else p1-=5;
+			}
+			a==0x1C : cksum_1C := data;
+			a==0x1D : cksum_1D := data;
+			a==0x1E : cksum_1E := data;
+			a==0x1F : par{ // checksum
+				sel cksum_1F<8>;
+				cksum_1F = data;
+				if((cksum_1C==^cksum_1E) & (cksum_1D==^cksum_1F)){
+					p1 += 5;
+				}
+			//	else p1-=10;
+			}
+		}
+	}
+
+}

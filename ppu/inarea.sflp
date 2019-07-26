@@ -1,0 +1,22 @@
+
+// window‚Åg—pA”ÍˆÍ‚ğ‹‚ß‚é
+
+circuit inarea
+{
+	input x<8>, right<8>, left<8>, io;
+	output mask;
+
+	sel l_x<9>, x_r<9>, l_r<9>;
+	sel in_area;
+output dbg;
+
+	l_x = (0b0 || x) - (0b0 || left);
+	x_r = (0b0 || right) - (0b0 || x);
+	// left<right‚Å‚ ‚é‚±‚Æ
+	l_r = (0b0 || right) - (0b0 || left) - 0b00000001;
+//dbg = io;
+	in_area = (l_x<8>==0b0) & (x_r<8>==0b0) & (l_r<8>==0b0);
+
+	if(io) mask = ^in_area;
+	else   mask = in_area;
+}

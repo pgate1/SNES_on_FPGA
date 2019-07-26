@@ -1,0 +1,26 @@
+
+%i "../fb/alu1.h"
+
+circuit alu_bcd16
+{
+	input a<16>, b<16>, c;
+	output dout<16>, cout8, cout16;
+	instrin add(a, b, c), sub(a, b, c);
+
+	alu1 alu_L, alu_H;
+
+	cout8  = alu_L.cout;
+	cout16 = alu_H.cout;
+
+	dout = alu_H.dout || alu_L.dout;
+
+	instruct add par{
+		alu_L.add(a< 7:0>, b< 7:0>, c, 0b1);
+		alu_H.add(a<15:8>, b<15:8>, alu_L.cout, 0b1);
+	}
+
+	instruct sub par{
+		alu_L.sub(a< 7:0>, b< 7:0>, c, 0b1);
+		alu_H.sub(a<15:8>, b<15:8>, alu_L.cout, 0b1);
+	}
+}

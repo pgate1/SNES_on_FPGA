@@ -1,0 +1,372 @@
+
+%i "../fb2/mul_8.h"
+%i "../fb2/div_u16.h"
+
+circuit ppu2_core
+{
+	input A<5>, D_in<8>;
+	output D_out<8>;
+	instrin read_io(A), write_io(A, D_in);
+	output NMIn, IRQn;
+	reg_wr NMI_reg, f_nmi, IRQ_reg, f_irq;
+	instrout dma_start, hdma_start;
+
+	instrin scan, hsync;
+	output scanline_out<9>, vblank_out, hblank_out;
+	reg_ws fi_vblank, vblank_tmp;
+	reg_wr fi_hblank;
+	instrout vblank_begin, vblank_end;
+
+	input pad_key1<12>, pad_key2<12>;
+	input f_overscan, open_bus<8>;
+
+	output f_halt, halt_code<8>;
+output dbg<16>;
+
+	reg_ws reset;
+	instrin soft_reset;
+
+	instrself halt(h_code);
+	sel h_code<8>;
+	reg_wr h_code_reg<8>;
+
+	sel Aio<8>;
+
+	reg_wr f_NMI_enable, f_joypad_auto, key_reading;
+	instrout key_polling;
+	reg_wr scanline<9>, scanline_tmp<9>;
+
+	instrout hdma_enable, hdma_init;
+
+	reg_wr f_timer_v_enable, f_timer_h_enable;
+	reg_wr r4202_mA<8>;
+	mul_8 mulu8;
+	reg_wr r4204_dL<8>, r4205_dH<8>;
+	div_u16 divu16;
+	reg_ws r4207_dL<8>, r4208_dH;
+	reg_ws r4209_dL<8>, r420A_dH;
+	reg_wr mul_div_ch;
+//	reg_wr r4210<8>;
+	reg_ws r4213<8>; // 初期値 0xFF
+
+	reg_wr scanpixel<9>;
+	sel timer_v_count<9>, timer_h_count<9>;
+
+reg_wr ready_rnd<6>;
+
+	instrout hv_count_latch;
+	reg_ws f_latched_count_en; // 初期値 0b1
+	output latched_count_en;
+
+	output f_cpu_speed;
+	reg_wr f_cpu_speed_reg;
+	instrout dram_refresh;
+
+	reg_wr nmi_wait<4>, irq_wait<4>;
+
+	stage_name scan_stg { task do(); }
+	stage_name FRAME { task do(); }
+//	stage_name delay_NMI { task do(nmi_wait); }
+//	stage_name delay_IRQ { task do(irq_wait); }
+
+	if(reset){
+		reset := 0b0;
+		ready_rnd := 0b000001;
+		f_NMI_enable := 0b0;
+		f_timer_v_enable := 0b0;
+		f_timer_h_enable := 0b0;
+		f_irq := 0b0;
+		f_latched_count_en := 0b1;
+		r4213 := 0xFF;
+		NMI_reg := 0b0;
+		IRQ_reg := 0b0;
+		f_cpu_speed_reg := 0b0;
+	//	scanline_tmp := 261;
+	//	scanline := 261;
+		h_code_reg := 0x00;
+	}
+
+	instruct soft_reset reset := 0b1;
+
+	Aio = 0b000 || A;
+
+	reg_wr Dout_reg<8>;
+	if(read_io) Dout_reg := D_out;
+	else D_out = Dout_reg;
+
+	timer_h_count = r4208_dH || r4207_dL;
+	timer_v_count = r420A_dH || r4209_dL;
+
+	scanline_out = scanline_tmp;
+	vblank_out = vblank_tmp;
+	hblank_out = fi_hblank;
+	latched_count_en = f_latched_count_en;
+
+	mulu8.run();
+
+	NMIn = ^NMI_reg;
+	IRQn = ^IRQ_reg;
+
+	f_cpu_speed = f_cpu_speed_reg;
+
+	instruct halt h_code_reg := h_code;
+	f_halt = halt_code!=0x00;
+	halt_code = h_code_reg;
+
+	instruct write_io any{
+		Aio==0x00 : par{ // $4200
+			f_NMI_enable := D_in<7>;
+          	if(D_in<7> & (^f_NMI_enable) & fi_vblank & f_nmi){
+				NMI_reg := 0b1;
+			//	generate delay_NMI.do(8);
+			}
+			f_timer_v_enable := D_in<5>;
+			f_timer_h_enable := D_in<4>;
+			if(D_in<5:4>==0b00){
+				f_irq := 0b0;
+				IRQ_reg := 0b0;
+			}
+/*
+			if((D_in<5:4>==0b10) & (scanline==timer_v_count)){
+				f_irq := 0b1;
+				IRQ_reg := 0b1;
+			}
+*/
+			f_joypad_auto := D_in<0>;
+		}
+		Aio==0x01 : par{ // 0x4201
+			if((D_in<7>==0b0) & f_latched_count_en){
+				hv_count_latch();
+			}
+			f_latched_count_en := D_in<7>;
+			r4213 := D_in;
+		}
+		Aio==0x02 : r4202_mA := D_in;
+		Aio==0x03 : par{
+			mulu8.set(r4202_mA, D_in);
+			mul_div_ch := 0b0;
+		}
+		Aio==0x04 : r4204_dL := D_in;
+		Aio==0x05 : r4205_dH := D_in;
+		Aio==0x06 : par{
+			divu16.set(r4205_dH||r4204_dL, D_in);
+			mul_div_ch := 0b1;
+		}
+		Aio==0x07 : r4207_dL := D_in; // h_count
+		Aio==0x08 : r4208_dH := D_in<0>;
+		Aio==0x09 : r4209_dL := D_in; // v_count
+		Aio==0x0A : r420A_dH := D_in<0>;
+		Aio==0x0B : dma_start(); // $420B
+		Aio==0x0C : hdma_enable(); // HDMA
+		Aio==0x0D : f_cpu_speed_reg := D_in<0>; // Access Cycle Designation in Memory (2) Area
+	//	Aio==0x0E : ; // Unknown
+	//	Aio==0x0F : ; // Unknown
+	//	Aio==0x10 : ;//r4210 := 0x02; 書き込みなし
+	//	Aio<4> & /|Aio<3:1> : ; // read only 12-1F
+	//	else : halt(0x01);
+	}
+
+	instruct read_io any{
+	//	Aio<4>==0b0 : D_out = open_bus;
+		Aio==0x10 : par{
+			D_out = f_nmi || open_bus<6:4> || 0x2;
+			f_nmi := 0b0; // ok
+		//	NMI_reg := 0b0;
+		}
+		Aio==0x11 : par{
+			D_out = f_irq || open_bus<6:0>;
+			f_irq := 0b0;
+			IRQ_reg := 0b0;
+		}
+		Aio==0x12 : par{
+			// <0> Joy pad ready
+			D_out = fi_vblank || fi_hblank || open_bus<5:1> || key_reading;//ready_rnd<0>;
+		//	ready_rnd := (ready_rnd<1> @ ready_rnd<0>) || ready_rnd<5:1>;
+		}
+		Aio==0x13 : D_out = f_latched_count_en || r4213<6:0>; // 0x4213 I/O Port
+		Aio==0x14 : D_out = divu16.q<7:0>;
+		Aio==0x15 : D_out = divu16.q<15:8>;
+		Aio==0x16 : any{
+			mul_div_ch : D_out = divu16.r<7:0>;
+			else       : D_out = mulu8.dout<7:0>;
+		}
+		Aio==0x17 : any{
+			mul_div_ch : D_out = divu16.r<15:8>;
+			else       : D_out = mulu8.dout<15:8>;
+		}
+		Aio==0x18 : D_out = pad_key1<3:0> || 0x0;
+		Aio==0x19 : D_out = pad_key1<11:4>;
+		Aio==0x1A : D_out = pad_key2<3:0> || 0x0;
+		Aio==0x1B : D_out = pad_key2<11:4>;
+		(Aio==0x1C) | (Aio==0x1D) | (Aio==0x1E) | (Aio==0x1F) : D_out = 0x00;
+		else : D_out = open_bus; // halt(0x02);
+	}
+
+	// clk 0
+	instruct scan par{
+		generate scan_stg.do();
+	}
+
+	// clk 0
+	instruct hsync par{ // 341 clk
+		generate FRAME.do();
+	}
+
+	// clk 1
+	stage scan_stg {
+		reg_wr pix_add<9>;
+		par{
+			// scanpixel -17 ～ +322 ?
+			if(FRAME.do){
+				scanpixel := -17; // 0b000000000 - 0b000010000 -1; -17
+				pix_add := 340;
+			}
+			else scanpixel++;
+
+			if(scanpixel==-1){
+				scanline := scanline_tmp;
+				pix_add := 0;
+			}
+
+			if((scanline_tmp==0) & (scanpixel==-1)){
+				f_nmi := 0b0;
+				NMI_reg := 0b0;
+				fi_vblank := 0b0;
+			}
+
+			any{
+				(^f_timer_h_enable) & f_timer_v_enable
+			//	& (scanpixel==0) // これでFF6ダンジョンがちらつかない:IRQクリアすればいらない
+				& (scanpixel==-15) // これでカオスシードが正常に描画できた FF6ok
+				// ラインの途中でenableになっても発生するようにする？
+				// いまのところは最初だけ発生にしないと有効になったらまた発生してしまう。
+				& (scanline_tmp==timer_v_count) : par{
+					// V_IRQ スキャンラインに到達したら発生
+					f_irq := 0b1;
+					IRQ_reg := 0b1;
+				//	generate delay_IRQ.do(4);
+				}
+				f_timer_h_enable & (^f_timer_v_enable) &
+				((scanpixel+pix_add)==timer_h_count) : par{
+					// H_IRQ 各ラインで発生
+					f_irq := 0b1;
+					IRQ_reg := 0b1;
+				//	generate delay_IRQ.do(4);
+				}
+				f_timer_h_enable & f_timer_v_enable &
+				(scanline==timer_v_count) & ((scanpixel+pix_add)==timer_h_count) : par{
+					f_irq := 0b1;
+					IRQ_reg := 0b1;
+				//	generate delay_IRQ.do(4);
+				}
+			}
+
+			any{
+				scanpixel==255 : fi_hblank := 0b1; // 255 ok
+				scanpixel==-1  : fi_hblank := 0b0; // -1 FF6ok
+			}
+
+			if( ((f_overscan==0b0) & (scanline_tmp==225) & (scanpixel==-1)) |
+				((f_overscan==0b1) & (scanline_tmp==240) & (scanpixel==-1))
+				){
+				fi_vblank := 0b1;
+				f_nmi := 0b1;
+				if(f_NMI_enable){
+					NMI_reg := 0b1;
+				//	generate delay_NMI.do(4);
+				}
+			}
+
+			if((scanline_tmp==0) &
+				(scanpixel==-10) // FF6ok
+			){
+				hdma_init();
+			}
+
+			// HDMAはCGRAMも書き込むのでライン途中で実行してはダメ(FFV,バハラグなど)
+			if(
+				(^fi_vblank) & // ok
+			//	(^force_blank) & // NG $2100:7=1の時でもHDMAは実行する（バハムートラグーン）
+				(scanpixel==260) // 260 FF6ok
+				){
+				hdma_start();
+			}
+
+			if(scanpixel==116){
+				dram_refresh();
+			}
+
+			if( (((f_overscan==0b0) & (scanline==225)) |
+				 ((f_overscan==0b1) & (scanline==240))) & (scanpixel==30)
+				){
+				key_reading := 0b1;
+				if(f_joypad_auto) key_polling();
+			}
+			if( (((f_overscan==0b0) & (scanline==227)) |
+				 ((f_overscan==0b1) & (scanline==242))) & (scanpixel==320)
+				){
+				key_reading := 0b0;
+			}
+
+			if(FRAME.do &
+				(((f_overscan==0b0) & (scanline_tmp==224)) |
+				 ((f_overscan==0b1) & (scanline_tmp==239))) ){
+				vblank_begin();
+				vblank_tmp := 0b1;
+			}
+
+			finish;
+		}
+	}
+
+	// 水平同期時の管理
+	// clk 1
+	stage FRAME {
+		first_state v_dummy;
+		finish;
+		state v_dummy par{ // 0 次フレームのための準備
+			scanline_tmp := 0;
+			vblank_end();
+			vblank_tmp := 0b0;
+			goto v_draw;
+		}
+		state v_draw par{ // 1-224(239) draw line
+			scanline_tmp++;
+			if( ((f_overscan==0b0) & (scanline_tmp==223)) |
+				((f_overscan==0b1) & (scanline_tmp==238)) ){
+				goto v_st;
+			}
+		}
+		state v_st par{	// 225,240 VBlank start
+			scanline_tmp++;
+		//	vblank_begin();
+		//	vblank_tmp := 0b1;
+			goto v_in;
+		}
+		state v_in par{	// 226,241 - 261
+			scanline_tmp++;
+			if(scanline_tmp==260) goto v_dummy; // for 261
+		}
+	}
+/*
+	stage delay_NMI {
+		par{
+        	if(scan) nmi_wait--;
+			if(nmi_wait==0){
+				NMI_reg := 0b1;
+				finish;
+			}
+		}
+	}
+
+	stage delay_IRQ {
+		par{
+        	if(scan) irq_wait--;
+			if(irq_wait==0){
+				IRQ_reg := 0b1;
+				finish;
+			}
+		}
+	}
+*/
+}

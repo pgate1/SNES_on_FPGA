@@ -1,0 +1,470 @@
+
+%i "get_patadrs.h"
+%i "bits.h"
+%i "oam_s.h"
+
+%d VM_PAT01 0b00
+%d VM_PAT23 0b01
+
+circuit obj_core
+{
+	input scanline<8>, size<3>;
+	input name_select<2>, name_base<2>;
+	input oam_adrs<7>, priority_rotation;
+	input forceblanking;
+
+	instrin search;
+	output A<15>;
+	instrout read_req;
+	input read_ack, D_in<16>;
+	output D_out<16>;
+
+	instrin fetch, hsync;
+	reg_wr hsync_reg;
+	instrin vblank_begin, vblank_end;
+
+	instrin oam_read(oam_A), oam_write(oam_A, oam_D);
+	input oam_A<10>, oam_D<8>;
+
+	instrin draw;
+	output col_pri<2>, col_enable, col_id<8>;
+
+	output time_over, range_over;
+	reg_wr f_time_over, f_range_over;
+
+output dbg<16>;
+
+	oam_s oam;
+
+	reg_wr halt_reg;
+	instrself halt;
+
+	// Search
+	instrself search_view(at_size, at_sign, obj_x, obj_y);
+	sel at_size, at_sign, obj_x<8>, obj_y<8>;
+	instrself get_size(size_sel);
+	sel size_sel, wh_size<8>, view_on;
+
+	mem spr_x_mem[32]<8>, spr_y_mem[32]<8>;
+	mem ca_mem[32]<16>, sign_mem[32], size_mem[32];
+	reg_wr obj_num<6>;
+
+	instrself read(rid, A, flp_h);
+	sel rid<2>, flp_h;
+	reg_wr rid_reg<2>, flp_h_reg;
+
+	bits bits0, bits1, bits2, bits3;
+	instrself make_pat_adrs(pat_sel);
+	sel pat_sel, pat_adrs<15>;
+	get_patadrs get_pat_adrs;
+
+	// Fetch
+	reg_wr fetch_id<5>;
+	sel chr_x<8>, chr_y<8>, chr_data<16>;
+	sel v_flip, h_flip, pority<2>, palette<3>, chr_id<9>;
+	sel chr_size, chr_sign;
+	instrself x_non_disp;
+	reg_wr inp_index<3>;
+	sel inp<3>;
+	reg_wr buf_id<6>;
+
+	// view
+	rega spr_buf_x[34]<9>;
+//	rega spr_buf_pri[34]<2>;
+	mem spr_buf_pri[34]<2>;
+//	rega spr_buf_pal[34]<3>;
+	mem spr_buf_pal[34]<3>;
+	rega spr_buf_pat0[34]<8>;
+	rega spr_buf_pat1[34]<8>;
+	rega spr_buf_pat2[34]<8>;
+	rega spr_buf_pat3[34]<8>;
+
+	instrself xpos_down, pat_shift, make_col;
+
+	sela col_low[34]<4>;
+
+	stage_name OBJ_SEARCH { task do(); }
+	stage_name OBJ_FETCH { task do(); }
+	stage_name read_wait { task do(rid_reg, flp_h_reg); }
+
+	if(0b0){
+		bits0.replace(0x00, 0x00, 0b0);
+		bits1.replace(0x00, 0x00, 0b0);
+		bits2.replace(0x00, 0x00, 0b0);
+		bits3.replace(0x00, 0x00, 0b0);
+	}
+
+// Byte 1  xxxxxxxx    x: X coordinate.
+// Byte 2  yyyyyyyy    y: Y coordinate.
+// Byte 3  cccccccc    c: starting character (tile) number.
+// Byte 4  vhoopppc    v: vflip  h: hflip  o: priority  p: palette number  c: char bit 9.
+	chr_x = spr_x_mem[fetch_id<4:0>];
+	chr_y = spr_y_mem[fetch_id<4:0>];
+	chr_data = ca_mem[fetch_id<4:0>];
+	v_flip  = chr_data<15>;
+	h_flip  = chr_data<14>;
+	pority  = chr_data<13:12>;
+	palette = chr_data<11:9>;
+	chr_id  = chr_data<8:0>;
+	chr_size = size_mem[fetch_id<4:0>];
+	chr_sign = sign_mem[fetch_id<4:0>];
+
+	range_over = f_range_over;
+	time_over = f_time_over;
+
+	D_out = oam.D_out;
+
+	instruct halt halt_reg := 0b1;
+	
+	instruct oam_write par{
+		oam.write(oam_A, oam_D);
+	}
+
+	instruct oam_read par{
+		oam.read(oam_A);
+	}
+
+	// clk 0
+	instruct search par{
+		generate OBJ_SEARCH.do();
+	}
+
+	instruct get_size par{
+		any{
+			size_sel==0b0 : any{
+				size==0b000 : wh_size = 0x08;
+				size==0b001 : wh_size = 0x08;
+				size==0b010 : wh_size = 0x08;
+				size==0b011 : wh_size = 0x10;
+				size==0b100 : wh_size = 0x10;
+				size==0b101 : wh_size = 0x20;
+			//	else : halt();
+			}
+			else : any{
+				size==0b000 : wh_size = 0x10;
+				size==0b001 : wh_size = 0x20;
+				size==0b010 : wh_size = 0x40;
+				size==0b011 : wh_size = 0x20;
+				size==0b100 : wh_size = 0x40;
+				size==0b101 : wh_size = 0x40;
+			//	else : halt();
+			}
+		}
+	}
+
+	// オブジェクト表示判定
+	instruct search_view par{
+		get_size(at_size);
+
+		sel end_x<9>, view_on_x;
+		end_x = (at_sign || obj_x) + (0b0 || wh_size);
+		view_on_x = (at_sign==0b0) | ((end_x<8>==0b0) & (/|end_x<7:0>));
+
+		sel sa_y<8>, view_on_y;
+		sa_y = scanline - obj_y;
+		view_on_y = (sa_y&(-wh_size))==0x00;
+
+		view_on = view_on_x & view_on_y;
+	}
+
+	instruct read par{
+		read_req();
+		generate read_wait.do(rid, flp_h);
+	}
+
+	// clk 0
+	instruct fetch par{
+		generate OBJ_FETCH.do();
+	}
+
+	instruct make_pat_adrs par{
+		sel inp_base<3>;
+		if(chr_sign){
+			sel inp_base_n<8>;
+			inp_base_n = (^chr_x) + 0x01;
+			inp_base = inp_base_n<5:3>;
+		}
+		else{
+			inp_base = 0b000;
+		}
+		inp = inp_base + inp_index;
+
+		get_size(chr_size);
+
+		sel pat_x<8>, pat_x_tile<3>;
+		if(h_flip) pat_x = wh_size + (^(0b00 || inp || 0b000)) + 0xF9;
+		else       pat_x = 0b00 || inp || 0b000;
+		pat_x_tile = pat_x<5:3>;
+
+		sel pat_y<8>, pat_y_tile<3>;
+		any{
+			v_flip : pat_y = (^scanline) + wh_size + chr_y; // wh -1 + ^y
+			else   : pat_y = scanline + (^chr_y) + 0x01;
+		}
+		pat_y_tile = pat_y<5:3>;
+
+		sel name_sel<2>;
+		if(chr_id<8>) name_sel = name_select;
+		else          name_sel = 0b00;
+
+		pat_adrs = get_pat_adrs.con(name_base||0b0, 0b10, name_sel, 0b0||chr_id,
+			pat_x_tile, pat_y_tile, pat_y<2:0>, 0b0||pat_sel).adrs;
+	}
+
+	// clk 0
+	instruct draw par{
+		xpos_down();
+		pat_shift();
+		make_col();
+	}
+
+	instruct x_non_disp par{
+		par(i=0;i<34;i++){
+			spr_buf_x[i] := -9; // 確定
+		}
+	}
+
+	// スプライトX座標バッファをデクリメント
+	instruct xpos_down par{
+		par(i=0;i<34;i++){
+			spr_buf_x[i]--;
+		}
+	}
+
+	// スプライトパターンバッファを左シフト
+	instruct pat_shift par{ // -1 ～ -8 ok -9時点で全てゼロ
+		any(i=0;i<34;i++){
+			/&spr_buf_x[i]<8:3> : par{ spr_buf_pat0[i]:=spr_buf_pat0[i]<6:0>||0b0; spr_buf_pat1[i]:=spr_buf_pat1[i]<6:0>||0b0; spr_buf_pat2[i]:=spr_buf_pat2[i]<6:0>||0b0; spr_buf_pat3[i]:=spr_buf_pat3[i]<6:0>||0b0; }
+		}
+	}
+
+	instruct make_col par{
+		par(i=0;i<34;i++){
+			col_low[i] = spr_buf_pat3[i]<7>||spr_buf_pat2[i]<7>||spr_buf_pat1[i]<7>||spr_buf_pat0[i]<7>;
+		}
+
+		// 描画されるべきスプライト選択 簡易記述版 12602LEs 52MHz
+		sel col_high<3>, col_low<4>;
+		alt(i=0;i<34;i++){
+			(/&spr_buf_x[i]<8:3>)&(/|col_low[i]) : par{ col_high=spr_buf_pal[i]; col_low=col_low[i]; col_pri=spr_buf_pri[i]; }
+			else : par{ col_low=0b0000; }
+		}
+		col_enable = /|col_low;
+		col_id = 0b1 || col_high || col_low;
+	}
+
+	instruct hsync hsync_reg := 0b1;
+
+	instruct vblank_begin par{
+	}
+
+	instruct vblank_end par{
+		if(^forceblanking){
+			f_range_over := 0b0;
+			f_time_over := 0b0;
+		}
+		// バハムートラグーンで最初の表示ラインに最後の表示ラインでフェッチしたスプライトが残らないように.
+		x_non_disp();
+	}
+
+// BG draw が256クロックの内に探索すること
+// 128objを探索するので、256/128=2clkで1obj探索
+// 32/128objをストック可能
+
+// Byte 00  xxxxxxxx    x: X coordinate.
+// Byte 01  yyyyyyyy    y: Y coordinate.
+// Byte 10  cccccccc    c: starting character (tile) number.
+// Byte 11  vhoopppc    v: vflip  h: hflip  o: priority  p: palette  c: char bit 9.
+
+	// clk 1
+	// OBJ次のscanlineに表示するOBJの検索
+	stage OBJ_SEARCH {
+		sel priority_base<7>, obj_slct<5>;
+		reg_wr search_id<7>;
+		first_state sst;
+
+		par{
+			if(priority_rotation) priority_base = oam_adrs;
+			else priority_base = 0b0000000;
+			obj_slct = obj_num<4:0>;
+			finish;
+		}
+
+		state sst par{ // 初回のみ
+			hsync_reg := 0b0;
+			obj_num := 0b000000;
+			search_id := priority_base;
+			oam.read(0b0||priority_base||0b10); // chr_ID 読み込み
+			goto pread;
+		}
+		state pread par{
+			if(^obj_num<5>){
+				ca_mem[obj_slct] := oam.D_out; // とりあえずchr_ID とAttribute保持
+			}
+			oam.read(0b0||search_id||0b00); // 座標サイズ読み込み
+			search_id++;
+			goto area;
+		}
+		state area par{
+			if(^obj_num<5>){
+				spr_x_mem[obj_slct] := oam.D_out< 7:0>;
+				spr_y_mem[obj_slct] := oam.D_out<15:8>;
+				size_mem[obj_slct] := oam.At_out<1>;
+				sign_mem[obj_slct] := oam.At_out<0>;
+			}
+			search_view(oam.At_out<1>, oam.At_out<0>, oam.D_out<7:0>, oam.D_out<15:8>);
+			if(view_on & ^obj_num<5>) obj_num++;
+
+			oam.read(0b0||search_id||0b10); // chr_ID とAttribute読み込み
+
+			// 33個以上でオーバー
+			if(obj_num<5> & view_on) f_range_over := 0b1; // ok
+			if(search_id==priority_base) goto hsync_wait;
+			else goto pread;
+		}
+		state hsync_wait par{
+			if(hsync_reg){
+				goto sst;
+			}
+		}
+	}
+
+// line=341clk -BG256 -16= 68clkちょっとで34pat
+// 1patあたり2clkで取得すること
+// これはvramから16bitを2回readすることを意味する
+	// clk 1
+	stage OBJ_FETCH {
+		sel w_num<3>;
+		reg_wr fetch_time<6>;
+		instrself pat_pos_init, pat_pos_next;
+		first_state sst;
+		finish;
+		state sst par{
+			x_non_disp();
+			fetch_id := obj_num<4:0> - 0b00001;
+			buf_id := 0b100001; // 34-1
+			fetch_time := 0b000000;
+			inp_index := 0b000;
+			if(obj_num!=0) goto read1; // obj_numは最大0b100000なので6bit必要
+			else{
+				goto hsync_wait;
+			}
+		}
+		state read1 par{
+			make_pat_adrs(0b0);
+			read(VM_PAT01, pat_adrs, h_flip);
+
+			spr_buf_pri[buf_id] := pority;
+			spr_buf_pal[buf_id] := palette;
+
+			goto read2;
+		}
+		state read2 par{
+			make_pat_adrs(0b1);
+			read(VM_PAT23, pat_adrs, h_flip);
+
+			// 横スプライト数-1
+			any{
+				chr_size==0b0 : any{
+					size==0b000 : w_num = 0b000; // 1
+					size==0b001 : w_num = 0b000; // 1
+					size==0b010 : w_num = 0b000; // 1
+					size==0b011 : w_num = 0b001; // 2
+					size==0b100 : w_num = 0b001; // 2
+					size==0b101 : w_num = 0b011; // 4
+				//	else : halt();
+				}
+				else : any{
+					size==0b000 : w_num = 0b001; // 2
+					size==0b001 : w_num = 0b011; // 4
+					size==0b010 : w_num = 0b111; // 8
+					size==0b011 : w_num = 0b011; // 4
+					size==0b100 : w_num = 0b111; // 8
+					size==0b101 : w_num = 0b111; // 8
+				//	else : halt();
+				}
+			}
+
+			sel h_x_base<9>;
+			if(chr_sign){
+				if(/|chr_x<2:0>) h_x_base = 0b111111 || chr_x<2:0>; // -7～-1
+				else h_x_base = 0b000000000; // -8みたいにきりのいいところはゼロから開始.
+			}
+			else h_x_base = 0b0 || chr_x;
+
+			// Sprite X pos
+			// 表示するのは-7以上なので+6して初期値-1からパターンレジスタをシフトできるようにしておく.
+			sel h_x_add<9>;
+			h_x_add  = h_x_base + (0b000 || inp_index || 0b000) + (0b0 || 0x06);
+			any(i=0;i<34;i++){
+				buf_id==i : spr_buf_x[i] := h_x_add;
+			}
+
+			sel h_x_over<9>;
+			h_x_over = h_x_base + (0b000 || (inp + 0b001) || 0b000);
+			if(h_x_over<8> | (inp==w_num)){
+				fetch_id--;
+				inp_index := 0b000;
+				pat_pos_init();
+			}
+			else{
+				inp_index++;
+				pat_pos_next();
+			}
+
+			// 次スキャンライン開始に重ならないように
+			// 重なった場合、次ラインでSprが表示されない.
+			// 透過スプライトもカウントする(時間が重要なので)
+			fetch_time++;
+			alt{
+				// こちらを優先しないとまたフェッチし始める
+				fetch_time==0b100001 : par{ // 34個まで
+					// 35個目があったらタイムオーバー
+					if((fetch_id!=0) | pat_pos_next) f_time_over := 0b1;
+					goto hsync_wait;
+				}
+				// 全部フェッチしきった
+				(fetch_id==0) & pat_pos_init : par{
+					goto hsync_wait;
+				}
+				else : goto read1;
+			}
+		}
+		state hsync_wait par{
+			if(hsync_reg){
+				// 次スキャンラインのための準備
+				goto sst;
+			}
+		}
+	}
+
+	stage read_wait {
+		sel fetch_pat0<8>, fetch_pat1<8>, fetch_pat2<8>, fetch_pat3<8>;
+		reg_wr fetch_pat_valid;
+		if(read_ack){
+			any{
+				rid_reg==VM_PAT01 : par{
+					fetch_pat0 = bits0.reverse(D_in< 7:0>, flp_h_reg).dout_rv;
+					fetch_pat1 = bits1.reverse(D_in<15:8>, flp_h_reg).dout_rv;
+					any(i=0;i<34;i++){
+						buf_id==i: par{ spr_buf_pat0[i]:=fetch_pat0; spr_buf_pat1[i]:=fetch_pat1; }
+					}
+					fetch_pat_valid := /|fetch_pat0 | /|fetch_pat1;
+				}
+				rid_reg==VM_PAT23 : par{
+					fetch_pat2 = bits2.reverse(D_in< 7:0>, flp_h_reg).dout_rv;
+					fetch_pat3 = bits3.reverse(D_in<15:8>, flp_h_reg).dout_rv;
+					any(i=0;i<34;i++){
+						buf_id==i: par{ spr_buf_pat2[i]:=fetch_pat2; spr_buf_pat3[i]:=fetch_pat3; }
+					}
+					// 有効Sprのみ格納、透過Sprはカウントしない
+					if(fetch_pat_valid | /|fetch_pat2 | /|fetch_pat3){
+						buf_id--;
+					}
+				}
+			}
+			finish;
+		}
+	}
+
+}

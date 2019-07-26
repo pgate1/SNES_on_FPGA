@@ -1,0 +1,20 @@
+
+// Adder 16 bit
+
+circuit add_16
+{
+	input din1<16>, din2<16>, cin;
+	output dout<16>, cout;
+	instrin con(din1, din2, cin);
+
+	sel b_base<16>, calc_a<17>, calc_sel<17>;
+
+	calc_a = (0b0||din1) + (0x0000||cin);
+	calc_sel = calc_a + (0b0||b_base);
+
+	instruct con par{
+		b_base = din2;
+		dout = calc_sel<15:0>;
+		cout = calc_sel<16>;
+	}
+}

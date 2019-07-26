@@ -1,0 +1,9 @@
+
+circuit dec_8
+{
+	input din<8>;
+	output dout<8>;
+	instrin con(din);
+
+	dout = din - 0x01;
+}

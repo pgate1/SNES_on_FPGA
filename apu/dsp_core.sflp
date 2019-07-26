@@ -1,0 +1,445 @@
+
+%i "ch_dsp.h"
+%i "echo_mod.h"
+%i "../fb2/mul_s16.h"
+//%i "clip8ch.h"
+
+circuit dsp_core
+{
+	instrin io_write(io_adrs, io_din), io_read(io_adrs);
+	input io_adrs<7>, io_din<8>;
+	output io_dout<8>;
+	instrin ready, reset_in, run;
+
+	instrout read_req, write_req;
+	instrself reading, writing;
+	output vA<16>, Dout<8>;
+	input vD<8>;
+	instrin ack;
+
+	output out_L<17>, out_R<17>;
+	output dbg<8>;
+
+	input mute<8>;
+	instrin sw_echo_off, sw_intpl_off;
+instrin sw_brrmul_off;
+
+	output disp_note<8>, disp_vold<8>;
+	output disp_freq_0<7>, disp_freq_1<7>, disp_freq_2<7>, disp_freq_3<7>;
+
+	reg_ws reset;
+	instrself reset_act;
+	ch_dsp ch_0, ch_1, ch_2, ch_3, ch_4, ch_5, ch_6, ch_7;
+	reg_wr doing<4>;
+
+	reg_wr r_MVOL_L<8>, r_MVOL_R<8>;
+	reg_wr r_EON<8>, r_DIR<8>, r_FLG<8>, r_NON<8>, r_KON<8>, r_KOFF<8>;
+
+	reg_wr r_PMON<8>;
+	reg_wr noise_freq_count<11>;
+	reg_wr noise_LFSR<15>;
+
+	reg_wr key_note<8>;
+	sel AH<4>, AL<4>;
+
+//	clip8ch add_clip_L, add_clip_R;
+//	clip8ch add_clip_echo_L, add_clip_echo_R;
+
+	mul_s16 mul_vol;
+	reg_wr main_mvol_L<16>, main_mvol_R<16>;
+
+	echo_mod echo;
+	reg_wr r_ESA<8>, r_EDL<4>, r_EFB<8>, r_EVOL_L<8>, r_EVOL_R<8>;
+
+	mem r_FIR[8]<8>;
+
+	output f_halt;
+
+	stage_name noise_stg { task do(); }
+
+	if(reset){
+		reset_act();
+		reset := 0;
+	}
+
+	AH = 0b0 || io_adrs<6:4>;
+	AL = io_adrs<3:0>;
+
+	// read_reqが出ているときは一旦read_ackで落とす
+	alt{
+		ack : ;
+		(doing<3> & echo.read_req) |
+		((doing==0x0) & ch_0.read_req) | ((doing==0x1) & ch_1.read_req) |
+		((doing==0x2) & ch_2.read_req) | ((doing==0x3) & ch_3.read_req) |
+		((doing==0x4) & ch_4.read_req) | ((doing==0x5) & ch_5.read_req) |
+		((doing==0x6) & ch_6.read_req) | ((doing==0x7) & ch_7.read_req) : par{
+			read_req(); reading();
+		}
+	}
+
+	alt{
+		ack : ;
+		(doing<3> & echo.write_req) : par{
+			write_req(); writing();
+		}
+	}
+
+	if(ack | ((^reading) & (^writing))){
+		doing++;
+	}
+
+	any(i=0;i<8;i++){
+		doing==(0b0||i) : vA = ch[i].vA;
+		else : vA = echo.eA;
+	}
+
+	par(i=0;i<8;i++){
+		ch[i].vD = vD;
+	}
+
+instruct sw_brrmul_off par(i=0;i<8;i++){
+	ch[i].sw_brrmul_off();
+}
+
+	echo.eDin = vD;
+
+	par(i=0;i<8;i++){
+		ch[i].DIR = r_DIR;
+	}
+
+	Dout = echo.eDout;
+
+	// ノイズ生成
+	sel noise_freq<8>;
+	noise_freq = 0b000||r_FLG<4:0>;
+	par(i=0;i<8;i++){
+		ch[i].noise = noise_LFSR;
+	}
+	par(i=0;i<8;i++){
+		ch[i].f_noise = r_NON<i>;
+	}
+
+	// ピッチモジュレーション
+	par(i=0;i<8;i++){
+		ch[i].f_pmod = r_PMON<i>;
+	}
+	ch_0.voice_in = 0x0000;
+	ch_1.voice_in = ch_0.voice_out;
+	ch_2.voice_in = ch_1.voice_out;
+	ch_3.voice_in = ch_2.voice_out;
+	ch_4.voice_in = ch_3.voice_out;
+	ch_5.voice_in = ch_4.voice_out;
+	ch_6.voice_in = ch_5.voice_out;
+	ch_7.voice_in = ch_6.voice_out;
+
+/*
+	any(i=0;i<8;i++){
+		mute<i> : ch[i].key_off();
+	}
+*/
+	par(i=0;i<8;i++){
+		ch[i].sw_mute = mute<i>;
+	}
+	par(i=0;i<8;i++){
+		instruct sw_intpl_off ch[i].sw_intpl_off();
+	}
+
+	sel main_add_L<19>, main_add_R<19>;
+	main_add_L =
+		(19#ch_0.out_L) +
+		(19#ch_1.out_L) +
+		(19#ch_2.out_L) +
+		(19#ch_3.out_L) +
+		(19#ch_4.out_L) +
+		(19#ch_5.out_L) +
+		(19#ch_6.out_L) +
+		(19#ch_7.out_L);
+	main_add_R =
+		(19#ch_0.out_R) +
+		(19#ch_1.out_R) +
+		(19#ch_2.out_R) +
+		(19#ch_3.out_R) +
+		(19#ch_4.out_R) +
+		(19#ch_5.out_R) +
+		(19#ch_6.out_R) +
+		(19#ch_7.out_R);
+
+	sel main_clip_L<16>, main_clip_R<16>;
+	any{
+		main_add_L<18:15>==0b1110 : main_clip_L = 0x8000;
+		main_add_L<18:15>==0b0001 : main_clip_L = 0x7FFF;
+		else                      : main_clip_L = main_add_L<15:0>;
+	}
+	any{
+		main_add_R<18:15>==0b1110 : main_clip_R = 0x8000;
+		main_add_R<18:15>==0b0001 : main_clip_R = 0x7FFF;
+		else                      : main_clip_R = main_add_R<15:0>;
+	}
+
+	// s16 * s8 -1 -> s23 -7 = s16
+	reg_wr mflip;
+	if(mflip) main_mvol_L := mul_vol.con(main_clip_L, 16#r_MVOL_L).dout<22:7>;
+	else      main_mvol_R := mul_vol.con(main_clip_R, 16#r_MVOL_R).dout<22:7>;
+	mflip := ^mflip;
+
+	sel echo_add_L<19>, echo_add_R<19>;
+	echo_add_L =
+		((19#r_EON<0>) & (19#ch_0.out_L)) +
+		((19#r_EON<1>) & (19#ch_1.out_L)) +
+		((19#r_EON<2>) & (19#ch_2.out_L)) +
+		((19#r_EON<3>) & (19#ch_3.out_L)) +
+		((19#r_EON<4>) & (19#ch_4.out_L)) +
+		((19#r_EON<5>) & (19#ch_5.out_L)) +
+		((19#r_EON<6>) & (19#ch_6.out_L)) +
+		((19#r_EON<7>) & (19#ch_7.out_L));
+	echo_add_R =
+		((19#r_EON<0>) & (19#ch_0.out_R)) +
+		((19#r_EON<1>) & (19#ch_1.out_R)) +
+		((19#r_EON<2>) & (19#ch_2.out_R)) +
+		((19#r_EON<3>) & (19#ch_3.out_R)) +
+		((19#r_EON<4>) & (19#ch_4.out_R)) +
+		((19#r_EON<5>) & (19#ch_5.out_R)) +
+		((19#r_EON<6>) & (19#ch_6.out_R)) +
+		((19#r_EON<7>) & (19#ch_7.out_R));
+
+	sel echo_clip_L<16>, echo_clip_R<16>;
+	any{
+		echo_add_L<18:15>==0b1110 : echo_clip_L = 0x8000;
+		echo_add_L<18:15>==0b0001 : echo_clip_L = 0x7FFF;
+		else                      : echo_clip_L = echo_add_L<15:0>;
+	}
+	any{
+		echo_add_R<18:15>==0b1110 : echo_clip_R = 0x8000;
+		echo_add_R<18:15>==0b0001 : echo_clip_R = 0x7FFF;
+		else                      : echo_clip_R = echo_add_R<15:0>;
+	}
+
+	instruct sw_echo_off echo.sw_echo_off();
+	echo.ESA = r_ESA;
+	echo.EDL = r_EDL;
+	echo.EFB = r_EFB;
+	par(i=0;i<8;i++){
+		echo.FIR[i] = r_FIR[i];
+	}
+	echo.EVOL_L = r_EVOL_L;
+	echo.EVOL_R = r_EVOL_R;
+	echo.f_notwrite = r_FLG<5>; // 1:Echo buffer not write.
+
+	echo.pre_L = echo_clip_L;
+	echo.pre_R = echo_clip_R;
+
+	// s16 + s16 = s17
+	sel out_add_L<17>, out_add_R<17>;
+	if(^sw_echo_off) out_add_L = (17#main_mvol_L) + (17#echo.out_L);
+	else out_add_L = 17#main_mvol_L;
+
+	if(^sw_echo_off) out_add_R = (17#main_mvol_R) + (17#echo.out_R);
+	else out_add_R = 17#main_mvol_R;
+
+	reg_wr out_L_reg<17>, out_R_reg<17>;
+	out_L_reg := out_add_L;
+	out_R_reg := out_add_R;
+
+	if(r_FLG<6>==0b0){
+		out_L = out_L_reg;
+		out_R = out_R_reg;
+	}
+	else{
+		out_L = 0;
+		out_R = 0;
+	}
+
+//dbg = /|vD | ch_0.dbg;
+dbg = ch_6.dbg;
+
+	disp_note = key_note;
+	disp_vold = ch_7.disp_vold || ch_6.disp_vold || ch_5.disp_vold || ch_4.disp_vold ||
+	            ch_3.disp_vold || ch_2.disp_vold || ch_1.disp_vold || ch_0.disp_vold;
+
+	disp_freq_0 = ch_0.disp_freq @ ch_1.disp_freq;
+	disp_freq_1 = ch_2.disp_freq @ ch_3.disp_freq;
+	disp_freq_2 = ch_4.disp_freq @ ch_5.disp_freq;
+	disp_freq_3 = ch_6.disp_freq @ ch_7.disp_freq;
+
+f_halt = ch_0.f_halt | ch_1.f_halt | ch_2.f_halt | ch_3.f_halt |
+         ch_4.f_halt | ch_5.f_halt | ch_6.f_halt | ch_7.f_halt;
+
+	instruct reset_in par{
+		reset_act();
+	}
+	
+	instruct reset_act par{
+		r_FLG := 0xE0;
+		noise_LFSR := 0b100_0000_0000_0000;
+	}
+
+	instruct io_write any{
+		AL==0xA : ; // none
+		AL==0xB : ; // none
+		AL==0xC : any{
+			AH==0x0 : r_MVOL_L := io_din;
+			AH==0x1 : r_MVOL_R := io_din;
+			AH==0x2 : r_EVOL_L := io_din;
+			AH==0x3 : r_EVOL_R := io_din;
+			AH==0x4 : par{
+				any(i=0;i<8;i++){
+					io_din<i> : ch[i].key_on();
+				}
+				key_note := key_note | io_din; // Key On
+				r_KON := io_din;
+			}
+			AH==0x5 : par{
+				any(i=0;i<8;i++){
+					io_din<i> : ch[i].key_off();
+				}
+				key_note := key_note & (^io_din); // Key Off
+				r_KOFF := io_din;
+			}
+			AH==0x6 : par{
+				if(io_din<7>){
+					par(i=0;i<8;i++){
+						ch[i].key_off();
+					}
+					key_note := 0x00;
+					r_KOFF := 0xFF;
+				}
+				if(/|io_din<4:0>) noise_freq_count := 1;
+				r_FLG := io_din;
+			}
+			AH==0x7 : any(i=0;i<8;i++){
+				AH==(0b0||i) : ch[i].endx_clear();
+			}
+		}
+		AL==0xD : any{
+			AH==0x0 : r_EFB := io_din;
+			AH==0x1 : ; // none
+			AH==0x2 : r_PMON := io_din<7:1> || 0b0; // Pitch modulation
+			AH==0x3 : r_NON := io_din; // Noise enable
+			AH==0x4 : r_EON := io_din;
+			AH==0x5 : r_DIR := io_din;
+			AH==0x6 : r_ESA := io_din;
+			AH==0x7 : r_EDL := io_din<3:0>;
+		}
+		AL==0xE : ; // none
+		AL==0xF : r_FIR[AH<2:0>] := io_din;
+		else : any(i=0;i<8;i++){ // AL==0x0-0x9
+			AH==(0b0||i) : ch[i].io_write(AL, io_din);
+		}
+	}
+
+	instruct io_read any{
+		AL==0xA : ; // none
+		AL==0xB : ; // none
+		AL==0xC : any{
+			AH==0x0 : io_dout = r_MVOL_L;
+			AH==0x1 : io_dout = r_MVOL_R;
+			AH==0x2 : io_dout = r_EVOL_L;
+			AH==0x3 : io_dout = r_EVOL_R;
+			AH==0x4 : io_dout = r_KON;
+			AH==0x5 : io_dout = r_KOFF;
+			AH==0x6 : io_dout = r_FLG;
+			AH==0x7 : par{ // ENDX Indicates source end block.
+				io_dout = ch_7.endx || ch_6.endx || ch_5.endx || ch_4.endx ||
+				          ch_3.endx || ch_2.endx || ch_1.endx || ch_0.endx;
+			}
+		}
+		AL==0xD : any{
+			AH==0x0 : io_dout = r_EFB;
+			AH==0x2 : io_dout = r_PMON;
+			AH==0x3 : io_dout = r_NON;
+			AH==0x4 : io_dout = r_EON; // XMSNES
+			AH==0x5 : io_dout = r_DIR;
+			AH==0x6 : io_dout = r_ESA; // XMSNES
+			AH==0x7 : io_dout = 0x0 || r_EDL;
+		}
+		AL==0xE : ; // none
+		AL==0xF : io_dout = r_FIR[AH<2:0>];
+		else : any(i=0;i<8;i++){
+			AH==(0b0||i) : io_dout = ch[i].io_read(AL).io_dout;
+		}
+	}
+
+	instruct run par{ // 128kHz
+		par(i=0;i<8;i++){
+			ch[i].run();
+		}
+
+		// エンベロープを0にするまで駆動する必要がある
+		reg_wr count_32kHz<2>;
+		count_32kHz++;
+		if(/&count_32kHz){
+			par(i=0;i<8;i++){
+				ch[i].tim32kHz();
+			}
+			echo.req();
+			if(noise_freq!=0) generate noise_stg.do();
+		}
+	}
+
+	instruct ready par{
+		par(i=0;i<8;i++){
+			ch[i].ready(); ch[i].read_ack();
+		}
+		echo.ready();
+		echo.ack();
+	}
+
+	instruct ack par{
+		any(i=0;i<8;i++){
+			doing==(0b0||i) : ch[i].read_ack();
+			else : echo.ack();
+		}
+	}
+
+	// 32KHz
+	stage noise_stg {
+		sel noise_fmax<11>;
+		par{
+			switch(noise_freq){
+				case 0x00: ;
+				case 0x01: noise_fmax = 2000; // 16Hz
+				case 0x02: noise_fmax = 1524; // 21Hz
+				case 0x03: noise_fmax = 1280; // 25Hz
+				case 0x04: noise_fmax = 1032; // 31Hz
+				case 0x05: noise_fmax = 762; // 42Hz
+				case 0x06: noise_fmax = 640; // 50Hz
+				case 0x07: noise_fmax = 508; // 63Hz
+				case 0x08: noise_fmax = 386; // 83Hz
+				case 0x09: noise_fmax = 320; // 100Hz
+				case 0x0A: noise_fmax = 256; // 125Hz
+				case 0x0B: noise_fmax = 192; // 167Hz
+				case 0x0C: noise_fmax = 160; // 200Hz
+				case 0x0D: noise_fmax = 128; // 250Hz
+				case 0x0E: noise_fmax = 96; // 333Hz
+				case 0x0F: noise_fmax = 80; // 400Hz
+				case 0x10: noise_fmax = 64; // 500Hz
+				case 0x11: noise_fmax = 48; // 667Hz
+				case 0x12: noise_fmax = 40; // 800Hz
+				case 0x13: noise_fmax = 32; // 1.0KHz
+				case 0x14: noise_fmax = 25; // 1.3KHz
+				case 0x15: noise_fmax = 20; // 1.6KHz
+				case 0x16: noise_fmax = 16; // 2.0KHz
+				case 0x17: noise_fmax = 12; // 2.7KHz
+				case 0x18: noise_fmax = 10; // 3.2KHz
+				case 0x19: noise_fmax = 8; // 4.0KHz
+				case 0x1A: noise_fmax = 6; // 5.3KHz
+				case 0x1B: noise_fmax = 5; // 6.4KHz
+				case 0x1C: noise_fmax = 4; // 8.0KHz
+				case 0x1D: noise_fmax = 3; // 10.7KHz
+				case 0x1E: noise_fmax = 2; // 16.0KHz
+				case 0x1F: noise_fmax = 1; // 32.0KHz
+			}
+
+			if(noise_freq_count==noise_fmax){
+				noise_LFSR := (noise_LFSR<1>@noise_LFSR<0>) || noise_LFSR<14:1>;
+				noise_freq_count := 1;
+			}
+			else{
+				noise_freq_count++;
+			}
+
+			finish;
+		}
+	}
+
+}

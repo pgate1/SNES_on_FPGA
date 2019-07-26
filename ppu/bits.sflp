@@ -1,0 +1,31 @@
+
+circuit bits
+{
+	input din_rv<8>, frv;
+	instrin reverse(din_rv, frv);
+	output dout_rv<8>;
+
+	input a<8>, b<8>, eo;
+	instrin replace(a, b, eo);
+	output dout_rep<8>;
+
+	instruct reverse par{
+		if(frv){
+			// ビットリバース
+			dout_rv = din_rv<0> || din_rv<1> || din_rv<2> || din_rv<3>
+			       || din_rv<4> || din_rv<5> || din_rv<6> || din_rv<7>;
+		}
+		else{
+			dout_rv = din_rv;
+		}
+	}
+
+	instruct replace par{
+		if(eo){
+			dout_rep = a<7> || a<5> || a<3> || a<1> || b<7> || b<5> || b<3> || b<1>;
+		}
+		else{
+			dout_rep = a<6> || a<4> || a<2> || a<0> || b<6> || b<4> || b<2> || b<0>;
+		}
+	}
+}

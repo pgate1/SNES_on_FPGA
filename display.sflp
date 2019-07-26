@@ -1,0 +1,49 @@
+
+// RGB RAM & to VGA Flip Buffer
+
+%i "mem/ram_16x512.h"
+
+circuit Display
+{
+	input din<15>;
+	output r_out<5>, g_out<5>, b_out<5>;
+	instrin write(din), read, bank_change;
+
+	ram_16x512 ram0, ram1;
+	reg_wr radrs<9>, wadrs<9>, bank;
+	reg_wr col_reg<16>, read_ack;
+	sel col<16>;
+
+	if(read_ack){
+		if(^bank) col = ram0.dout;
+		else      col = ram1.dout;
+		col_reg := col;
+		read_ack := 0b0;
+	}
+	else{
+		if(^bank) col = col_reg;
+		else      col = col_reg;
+	}
+
+	r_out = col< 4: 0>;
+	g_out = col< 9: 5>;
+	b_out = col<14:10>;
+
+	instruct bank_change par{
+		bank := ^bank;
+	}
+
+	instruct read par{
+		if(^bank) ram0.read(radrs);
+		else      ram1.read(radrs);
+		radrs++;
+		read_ack := 0b1;
+	}
+
+	instruct write par{
+		if(bank) ram0.write(wadrs, 0b0||din);
+		else     ram1.write(wadrs, 0b0||din);
+		wadrs++;
+	}
+
+}

@@ -1,0 +1,183 @@
+
+%d VM_TILE 0b00
+%d VM_CHR  0b01
+
+%i "../fb2/mul_s16.h"
+
+circuit mode7
+{
+	output A<14>;
+	instrout read_req;
+	input read_ack, D_in<16>;
+
+	input scanline<8>; // unsigned
+	input h_scroll<13>, v_scroll<13>; // signed
+
+	input f_empspace, f_empfill;
+	input f_v_flip, f_h_flip;
+	input rotA<16>, rotB<16>, rotC<16>, rotD<16>; // signed
+	input cX<13>, cY<13>; // signed
+
+	input f_direct_color, f_ExtBG;
+
+	output col_enable, col_id<8>;
+	output dir_col<15>;
+	output ext_col_en, ext_col_id<8>, ext_pri;
+
+	instrin hsync, draw;
+	output dbg;
+
+	instrself read(rid, A);
+	sel rid<2>;
+	reg rid_reg<2>;
+
+	instrin line_init;
+
+	// tile adrs
+	sel dy<8>;
+	sel sxc<14>, syc<14>;
+	sel sx<11>, sy<11>;
+	reg_wr px<22>, py<22>;
+	mul_s16 mulx, muly;
+
+	sel mx<10>, my<10>;
+	sel tile_data<8>;
+
+	instrself chr_read;
+	reg_wr chr_data<8>;
+
+	stage_name line_init_stage { task do(); }
+	stage_name read_wait { task do(rid_reg); }
+
+	// <8>
+	if(f_v_flip) dy = ^scanline;
+	else         dy =  scanline;
+
+	// <s14> = <s13> - <s13>
+	sxc = (14#h_scroll) - (14#cX);
+	syc = (14#v_scroll) - (14#cY);
+
+	// RPGツクール2、キャッツラン
+	// CLIP(a) (((a)&0x2000)?((a)|~0x3FF):((a)&0x3FF))
+	sx = sxc<13> || sxc<9:0>;
+	sy = syc<13> || syc<9:0>;
+
+	// 8bit固定少数点から整数に変換
+	mx = px<17:8>; // 10bit
+	my = py<17:8>;
+
+	col_enable = chr_data!=0x00;
+
+	if(f_direct_color){
+		dir_col = 
+			chr_data<7:6> || 0b000 ||
+			chr_data<5:3> || 0b00 ||
+			chr_data<2:0> || 0b00;
+	}
+	else{
+		col_id = chr_data;
+	}
+
+	// 拡張BGモード
+	if(f_ExtBG){
+		ext_col_id = 0b0 || col_id<6:0>;
+		ext_pri = col_id<7>;
+	}
+	else{
+		ext_col_id = 0x00;
+		ext_pri = 0b0;
+	}
+	ext_col_en = ext_col_id!=0x00;
+
+//dbg = dbg_reg;
+
+	instruct hsync par{
+		;
+	}
+
+	instruct read par{
+		read_req();
+		generate read_wait.do(rid);
+	}
+
+	// 初期値
+	instruct line_init par{
+		generate line_init_stage.do();
+	}
+
+	instruct draw par{
+		sel tile_adrs<14>;
+		tile_adrs = my<9:3> || mx<9:3>;
+		read(VM_TILE, tile_adrs);
+	}
+
+	instruct chr_read par{
+		sel chr_adrs<14>;
+		chr_adrs = tile_data || my<2:0> || mx<2:0>;
+
+		if(f_empspace & (/|px<21:18> | /|py<21:18>)){ // 領域外
+			if(f_empfill) read(VM_CHR, 14#0b0); // char 0
+			else chr_data := 0x00; // 透過
+		}
+		else read(VM_CHR, chr_adrs);
+
+		if(f_h_flip){
+			px -= (22#rotA);
+			py -= (22#rotC);
+		}
+		else{
+			px += (22#rotA);
+			py += (22#rotC);
+		}
+	}
+
+	stage line_init_stage{
+		first_state st1;
+		state st1 par{
+			// <s16> * <s14>
+			px := mulx.con(rotA, 16#sx).dout<21:6> || 0b000000;
+			py := muly.con(rotC, 16#sx).dout<21:6> || 0b000000;
+			goto st2;
+		}
+		state st2 par{
+			// <s16> * <8>
+			px += (mulx.con(rotB, 0x00||dy).dout<21:6> || 0b000000);
+			py += (muly.con(rotD, 0x00||dy).dout<21:6> || 0b000000);
+			goto st3;
+		}
+		state st3 par{
+			// <s16> * <s14>
+			px += (mulx.con(rotB, 16#sy).dout<21:6> || 0b000000);
+			py += (muly.con(rotD, 16#sy).dout<21:6> || 0b000000);
+			goto st4;
+		}
+		state st4 par{
+			// <22> = 14#<s13> || <8>
+			px += ((14#cX) || 0x00);
+			py += ((14#cY) || 0x00);
+			if(f_h_flip) goto st5;
+			else{ goto st1; finish; }
+		}
+		state st5 par{
+			// px<22> rotA<16>*255
+			px += (mulx.con(rotA, 0x00FF).dout<21:0>);
+			py += (muly.con(rotC, 0x00FF).dout<21:0>);
+			goto st1;
+			finish;
+		}
+	}
+
+	stage read_wait {
+		if(read_ack){
+			any{
+				rid_reg==VM_TILE : par{
+					tile_data = D_in<7:0>;
+					chr_read();
+				}
+				rid_reg==VM_CHR : chr_data := D_in<15:8>;
+			}
+			finish;
+		}
+	}
+
+}

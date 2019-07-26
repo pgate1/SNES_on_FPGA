@@ -1,0 +1,32 @@
+/*
+	•„†‚È‚µ‚W~‚W‚P‚UƒrƒbƒgæZ
+*/
+
+circuit mul_8
+{
+	input a<8>, b<8>;
+	output dout<16>, ack;
+	instrin set(a, b), run;
+
+	reg_wr a_reg<8>, b_reg<16>;
+	reg_wr m<16>;
+	reg_wr count<3>;
+
+	dout = m + (b_reg & (16#a_reg<0>));
+	ack = /&count;
+
+	instruct set par{
+		a_reg := a;
+		b_reg := 0x00 || b;
+		m := 0x0000;
+		count := 0b000;
+	}
+
+	instruct run if(^set) par{
+		count++;
+		m := dout;
+		b_reg := b_reg<14:0> || 0b0;
+		a_reg := 0b0 || a_reg<7:1>;
+	}
+
+}

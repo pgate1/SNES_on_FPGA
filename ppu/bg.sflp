@@ -1,0 +1,511 @@
+
+%i "get_patadrs.h"
+%i "bits.h"
+
+%d OFS_HVAL 0b101
+%d OFS_VVAL 0b110
+%d VM_TILE  0b100
+%d VM_PAT01 0b000
+%d VM_PAT23 0b001
+%d VM_PAT45 0b010
+%d VM_PAT67 0b011
+
+circuit bg
+{
+	output A<15>;
+	instrout read_req;
+	input read_ack, D_in<16>;
+
+	input id<2>, bg_mode<3>;
+	input scanline<8>, scantile<6>;
+	input h_scroll<10>, v_scroll<10>;
+	input col_depth<2>;
+	input tile_base<5>, sc_size<2>, tile_size;
+	input chr_base<3>;
+	input mosaic_enable, mosaic_size<4>;
+
+	input palette_offset<2>;
+	input vdot<3>;
+
+	output col_enable, col_id<8>, col_pri;
+	output col_enable_sub, col_id_sub<8>;
+
+	instrin hsync, vblank_end;
+	instrin pat_temp, pat_draw;
+output dbg<16>;
+
+	instrself read(rid, A);
+	sel rid<3>;
+	reg rid_reg<3>;
+
+	// Offset-Par-Tile
+	instrin ofsH_read, ofsV_read;
+	instrself make_ofs_adrs(s_sec);
+	sel s_sec<2>, ofs_tile_adrs<15>;
+	reg_wr ofs_Hval<16>, ofs_Vval<16>;
+	output Hval<16>, Vval<16>;
+	input bg3_Hval<16>, bg3_Vval<16>;
+	instrself fi_ofs_x, fi_ofs_y;
+	reg_wr ofs_x<4>, ofs_y<4>;
+
+	// Tile Address
+	instrin tile_read;
+	instrself make_tile_adrs;
+	sel tile_adrs<15>;
+	reg_wr tile_data<16>;
+
+	// Tile Data
+	sel v_flip, h_flip, pority_z, palette<3>, chr_id<10>;
+
+	// Pattern Address
+	instrin pat01_read, pat23_read, pat45_read, pat67_read;
+	instrself make_pat_adrs(pat_sel);
+	sel pat_sel<2>, pat_adrs<15>;
+	get_patadrs get_pat_adrs;
+
+	// Pattern Data
+	reg_wr pat_t0<8>, pat_t1<8>, pat_t2<8>, pat_t3<8>,
+	       pat_t4<8>, pat_t5<8>, pat_t6<8>, pat_t7<8>;
+	reg_wr pat_d0<8>, pat_d1<8>, pat_d2<8>, pat_d3<8>,
+	       pat_d4<8>, pat_d5<8>, pat_d6<8>, pat_d7<8>;
+	reg_wr pat_i0<8>, pat_i1<8>, pat_i2<8>, pat_i3<8>,
+	       pat_i4<8>, pat_i5<8>, pat_i6<8>, pat_i7<8>;
+	reg_wr priority_t, priority_d;
+	reg_wr palette_t<3>, palette_d<3>;
+	bits bits0, bits1, bits2, bits3,
+	     bits4, bits5, bits6, bits7;
+
+	instrself make_col;
+	sel col_palette<3>, col_id_t<8>;
+	instrself pat_shift;
+
+	reg_wr mos_x_count<4>, mos_col_id<8>;
+	reg_wr mos_y_count<4>;
+	instrin mos_reset;
+
+	// BG mode 5,6 H512
+	instrself make_col_sub;
+	reg_wr pat_s0<8>, pat_s1<8>, pat_s2<8>, pat_s3<8>;
+
+reg dbg_reg<16>;
+
+	stage_name read_wait { task do(); }
+
+	// tile_data           v: vertical flip  h: horizontal flip
+	//  vhopppcc cccccccc  o: priority bit  p: palette number
+	v_flip   = tile_data<15>;
+	h_flip   = tile_data<14>;
+	pority_z = tile_data<13>;
+	palette  = tile_data<12:10>;
+	chr_id   = tile_data<9:0>;
+
+	Hval = ofs_Hval;
+	Vval = ofs_Vval;
+
+dbg = dbg_reg;
+
+	instruct hsync par{
+		mos_x_count := 0x0;
+		mos_col_id := 0x00;
+
+		if((scanline==0) // scanline=1にクリアする
+			| (mos_y_count==mosaic_size)){
+			mos_y_count := 0x0;
+		}
+		else mos_y_count++;
+	}
+
+	instruct vblank_end par{
+	}
+
+	instruct mos_reset par{
+		mos_y_count := 0x0;
+	}
+
+	instruct read par{
+		read_req();
+		rid_reg := rid;
+		generate read_wait.do();
+	}
+
+	// only BG3
+	instruct make_ofs_adrs par{
+		sel s_bg3_tx<7>, s_bg3_ty<7>;
+		s_bg3_tx = ((0b0||scantile) - 0b0000001) + h_scroll<9:3>;
+		s_bg3_ty = v_scroll<9:3>;
+
+		sel ofs_tile_x<6>, ofs_tile_y<6>;
+		if(tile_size){ // タイルサイズ16の場合
+			ofs_tile_x = s_bg3_tx<6:1>;
+			ofs_tile_y = s_bg3_ty<6:1>;
+		}
+		else{
+			ofs_tile_x = s_bg3_tx<5:0>;
+			ofs_tile_y = s_bg3_ty<5:0>;
+		}
+
+		sel ofs_sc<2>;
+		any{
+			sc_size==0b00 : ofs_sc = 0b00;
+			sc_size==0b01 : ofs_sc = 0b0 || ofs_tile_x<5>;
+			sc_size==0b10 : ofs_sc = 0b0 || ofs_tile_y<5>;
+			sc_size==0b11 : ofs_sc = ofs_tile_y<5> || ofs_tile_x<5>;
+		}
+
+		ofs_tile_adrs = ((tile_base + (0b000 || ofs_sc)) || ofs_tile_y<4:0> || ofs_tile_x<4:0>)
+			+ (0b000000000 || s_sec || 0b0000);
+	}
+
+	instruct ofsH_read par{
+		make_ofs_adrs(0b00);
+		read(OFS_HVAL, ofs_tile_adrs);
+	}
+
+	instruct ofsV_read par{
+		sel VOffsetOffset<2>;
+		if(/&v_scroll<7:3>) VOffsetOffset = 0b01;
+		else                VOffsetOffset = 0b10;
+		make_ofs_adrs(VOffsetOffset);
+		read(OFS_VVAL, ofs_tile_adrs);
+	}
+
+	instruct make_tile_adrs par{
+
+		sel s_bg3_Hval<16>, s_bg3_Vval<16>;
+		any{
+			(bg_mode==2) | (bg_mode==6) : par{ // mode 2,6
+				s_bg3_Hval = bg3_Hval;
+				s_bg3_Vval = bg3_Vval;
+			}
+			(bg_mode==4) : par{ // mode 4
+				if(bg3_Hval<15>){
+					s_bg3_Hval = 0x0000;
+					s_bg3_Vval = bg3_Hval;
+				}
+				else{
+					s_bg3_Hval = bg3_Hval;
+					s_bg3_Vval = 0x0000;
+				}
+			}
+			else : par{
+				s_bg3_Hval = 0x0000;
+				s_bg3_Vval = 0x0000;
+			}
+		}
+
+		if(	(((id==0b00) & s_bg3_Hval<13>) | ((id==0b01) & s_bg3_Hval<14>)) ){
+			fi_ofs_x();
+		}
+		if(	(((id==0b00) & s_bg3_Vval<13>) | ((id==0b01) & s_bg3_Vval<14>)) ){
+			fi_ofs_y();
+		}
+
+		sel sc_x<10>, tile_x<7>;
+		if(fi_ofs_x){
+			sc_x = (0b0 || scantile || 0b000) + s_bg3_Hval<9:0>;
+		}
+		else{
+			sc_x = (0b0 || scantile || 0b000) + h_scroll;
+		}
+		tile_x = sc_x<9:3>;
+		ofs_x := sc_x<3:0>;
+
+		sel sc_y_t<10>;
+		if(fi_ofs_y){
+			sc_y_t = (0b00 || scanline) + s_bg3_Vval<9:0>;
+		}
+		else{
+			sc_y_t = (0b00 || scanline) + v_scroll;
+		}
+
+		// Mosaic
+		sel sc_y<10>, tile_y<7>;
+		if(mosaic_enable){
+			sc_y = sc_y_t - (0b000000||mos_y_count);
+		}
+		else{
+			sc_y = sc_y_t;
+		}
+		tile_y = sc_y<9:3>;
+		ofs_y := sc_y<3:0>;
+
+		sel a_tile_y<6>, a_tile_x<6>;
+		if((bg_mode==5) | (bg_mode==6)){
+			if(tile_size){ // タイルサイズ16の場合
+				a_tile_y = tile_y<6:1>;
+			}
+			else{
+				a_tile_y = tile_y<5:0>;
+			}
+			a_tile_x = tile_x<5:0>;
+		}
+		else{
+			if(tile_size){ // タイルサイズ16の場合
+				a_tile_x = tile_x<6:1>;
+				a_tile_y = tile_y<6:1>;
+			}
+			else{
+				a_tile_x = tile_x<5:0>;
+				a_tile_y = tile_y<5:0>;
+			}
+		}
+
+		sel a_sc<2>;
+		any{
+			sc_size==0b00 : a_sc = 0b00;
+			sc_size==0b01 : a_sc = 0b0 || a_tile_x<5>;
+			sc_size==0b10 : a_sc = 0b0 || a_tile_y<5>;
+			sc_size==0b11 : a_sc = a_tile_y<5> || a_tile_x<5>;
+		}
+
+		tile_adrs = (tile_base + (0b000 || a_sc)) || a_tile_y<4:0> || a_tile_x<4:0>;
+	}
+
+	instruct tile_read par{
+		make_tile_adrs();
+		read(VM_TILE, tile_adrs);
+	}
+
+	instruct make_pat_adrs par{
+		// パターン位置座標と16タイルの場合
+		sel pat_x_tile, pat_y_tile;
+		if((bg_mode==5) | (bg_mode==6)){
+			pat_x_tile = 0b0;
+		}
+		else{
+			pat_x_tile = tile_size & (ofs_x<3> @ h_flip);
+		}
+		pat_y_tile = tile_size & (ofs_y<3> @ v_flip);
+
+		sel pat_y<3>;
+		any{
+			v_flip : pat_y = ^ofs_y<2:0>;
+			else   : pat_y =  ofs_y<2:0>;
+		}
+
+		pat_adrs = get_pat_adrs.con(chr_base, col_depth, 0b00, chr_id,
+			0b00||pat_x_tile, 0b00||pat_y_tile, pat_y, pat_sel).adrs;
+	}
+
+	instruct pat01_read par{
+		sel vasel_01<2>;
+		if(((bg_mode==5) | (bg_mode==6)) & h_flip){
+			if(col_depth==0b01) vasel_01 = 0b01; // col 2
+			if(col_depth==0b10) vasel_01 = 0b10; // col 4
+		}
+		else vasel_01 = 0b00;
+		make_pat_adrs(vasel_01);
+		read(VM_PAT01, pat_adrs);
+	}
+
+	instruct pat23_read par{
+		sel vasel_23<2>;
+		if(((bg_mode==5) | (bg_mode==6)) & h_flip){
+			if(col_depth==0b01) vasel_23 = 0b00; // col 2
+			if(col_depth==0b10) vasel_23 = 0b11; // col 4
+		}
+		else vasel_23 = 0b01;
+		make_pat_adrs(vasel_23);
+		read(VM_PAT23, pat_adrs);
+	}
+
+	instruct pat45_read par{
+		sel vasel_45<2>;
+		if(((bg_mode==5) | (bg_mode==6)) & h_flip){
+			vasel_45 = 0b00; // col 4
+		}
+		else vasel_45 = 0b10;
+		make_pat_adrs(vasel_45);
+		read(VM_PAT45, pat_adrs);
+	}
+
+	instruct pat67_read par{
+		sel vasel_67<2>;
+		if(((bg_mode==5) | (bg_mode==6)) & h_flip){
+			vasel_67 = 0b01; // col 4
+		}
+		else vasel_67 = 0b11;
+		make_pat_adrs(vasel_67);
+		read(VM_PAT67, pat_adrs);
+	}
+
+	// vramからreadしたpatをtempに入れる
+	instruct pat_temp par{ // instrin
+		pat_t0 := pat_i0; pat_t1 := pat_i1;
+		pat_t2 := pat_i2; pat_t3 := pat_i3;
+		pat_t4 := pat_i4; pat_t5 := pat_i5;
+		pat_t6 := pat_i6; pat_t7 := pat_i7;
+		priority_t := pority_z;
+		palette_t := palette;
+	}
+
+	instruct make_col par{
+
+		sel col_low_t<8>;
+		col_low_t = pat_d7<7> || pat_d6<7> || pat_d5<7> || pat_d4<7> ||
+		            pat_d3<7> || pat_d2<7> || pat_d1<7> || pat_d0<7>;
+		col_palette = palette_d;
+		col_pri = priority_d;
+
+		sel col_low<8>;
+		switch(col_depth){
+			case 0b00: col_low = 0x00;
+			case 0b01: col_low = 0b000000 || col_low_t<1:0>; // 2
+			case 0b10: col_low = 0b0000 || col_low_t<3:0>; // 4
+			case 0b11: col_low = col_low_t; // 8
+		}
+
+		switch(col_depth){
+			case 0b00: col_id_t = 0x00;
+			case 0b01: col_id_t = 0b0 || palette_offset || col_palette || col_low<1:0>;
+			case 0b10: col_id_t = 0b0 || col_palette || col_low<3:0>;
+			case 0b11: col_id_t = col_low;
+		}
+
+		// Mosaic
+		if(mosaic_enable){
+			if(mos_x_count==0x0){
+				col_id = col_id_t;
+				mos_col_id := col_id_t;
+			}
+			else{
+				col_id = mos_col_id;
+			}
+
+			if(mos_x_count==mosaic_size) mos_x_count := 0x0;
+			else mos_x_count++;
+		}
+		else{
+			col_id = col_id_t;
+		}
+
+		switch(col_depth){
+			case 0b00: col_enable = 0b0;
+			case 0b01: col_enable = /|col_id<1:0>;
+			case 0b10: col_enable = /|col_id<3:0>;
+			case 0b11: col_enable = /|col_id;
+		}
+	}
+
+	// mode 5,6
+	instruct make_col_sub par{
+
+		sel col_low_t_sub<4>;
+		col_low_t_sub = pat_s3<7> || pat_s2<7> || pat_s1<7> || pat_s0<7>;
+	//	col_palette = palette_d;
+	//	col_pri = priority_d;
+
+		sel col_low_sub<4>;
+		switch(col_depth){
+			case 0b00: col_low_sub = 0x0;
+			case 0b01: col_low_sub = 0b00 || col_low_t_sub<1:0>; // 2
+			case 0b10: col_low_sub = col_low_t_sub<3:0>; // 4
+			case 0b11: col_low_sub = 0b0000;
+		}
+
+		sel col_id_t_sub<8>;
+		switch(col_depth){
+			case 0b00: col_id_t_sub = 0x00;
+			case 0b01: col_id_t_sub = 0b000 || col_palette || col_low_sub<1:0>; // 2
+			case 0b10: col_id_t_sub = 0b0 || col_palette || col_low_sub<3:0>; // 4
+			case 0b11: col_id_t_sub = 0x00;
+		}
+
+		// Mosaic
+		if(mosaic_enable){
+			if(mos_x_count==0x0){
+				col_id_sub = col_id_t; // ? col_id_t_sub ?
+			//	mos_col_id := col_id_t;
+			}
+			else{
+				col_id_sub = mos_col_id;
+			}
+
+		//	if(mos_x_count==mosaic_size) mos_x_count := 0x0;
+		//	else mos_x_count++;
+		}
+		else{
+			col_id_sub = col_id_t_sub;
+		}
+
+		switch(col_depth){
+			case 0b00: col_enable_sub = 0b0;
+			case 0b01: col_enable_sub = /|col_id_sub<1:0>;
+			case 0b10: col_enable_sub = /|col_id_sub<3:0>;
+			case 0b11: col_enable_sub = 0b0;
+		}
+	}
+
+	instruct pat_shift par{ // instrself
+		if((^vdot)==h_scroll<2:0>){
+			if((bg_mode==5) | (bg_mode==6)){
+				if(col_depth==0b01){ // 2
+					pat_d0 := bits0.replace(pat_t0, pat_t2, 0b1).dout_rep;
+					pat_s0 := bits1.replace(pat_t0, pat_t2, 0b0).dout_rep;
+					pat_d1 := bits2.replace(pat_t1, pat_t3, 0b1).dout_rep;
+					pat_s1 := bits3.replace(pat_t1, pat_t3, 0b0).dout_rep;
+				}
+				else{ // 4
+					pat_d0 := bits0.replace(pat_t0, pat_t4, 0b1).dout_rep;
+					pat_s0 := bits1.replace(pat_t0, pat_t4, 0b0).dout_rep;
+					pat_d1 := bits2.replace(pat_t1, pat_t5, 0b1).dout_rep;
+					pat_s1 := bits3.replace(pat_t1, pat_t5, 0b0).dout_rep;
+					pat_d2 := bits4.replace(pat_t2, pat_t6, 0b1).dout_rep;
+					pat_s2 := bits5.replace(pat_t2, pat_t6, 0b0).dout_rep;
+					pat_d3 := bits6.replace(pat_t3, pat_t7, 0b1).dout_rep;
+					pat_s3 := bits7.replace(pat_t3, pat_t7, 0b0).dout_rep;
+				}
+			}
+			else{ // normal
+				pat_d0 := pat_t0; pat_d1 := pat_t1;
+				pat_d2 := pat_t2; pat_d3 := pat_t3;
+				pat_d4 := pat_t4; pat_d5 := pat_t5;
+				pat_d6 := pat_t6; pat_d7 := pat_t7;
+			}
+			priority_d := priority_t;
+			palette_d := palette_t;
+		}
+		else{
+			pat_d0 := pat_d0<6:0> || 0b0; pat_d1 := pat_d1<6:0> || 0b0;
+			pat_d2 := pat_d2<6:0> || 0b0; pat_d3 := pat_d3<6:0> || 0b0;
+			pat_d4 := pat_d4<6:0> || 0b0; pat_d5 := pat_d5<6:0> || 0b0;
+			pat_d6 := pat_d6<6:0> || 0b0; pat_d7 := pat_d7<6:0> || 0b0;
+			pat_s0 := pat_s0<6:0> || 0b0; pat_s1 := pat_s1<6:0> || 0b0;
+			pat_s2 := pat_s2<6:0> || 0b0; pat_s3 := pat_s3<6:0> || 0b0;
+		}
+	}
+
+	instruct pat_draw par{ // instrin
+		make_col();
+		make_col_sub();
+		pat_shift();
+	}
+
+	stage read_wait {
+		if(read_ack){
+			switch(rid_reg){
+				case OFS_HVAL: ofs_Hval := D_in;
+				case OFS_VVAL: ofs_Vval := D_in;
+				case VM_TILE: tile_data := D_in;
+				case VM_PAT01: par{
+					pat_i0 := bits0.reverse(D_in< 7:0>, h_flip).dout_rv;
+					pat_i1 := bits1.reverse(D_in<15:8>, h_flip).dout_rv;
+				}
+				case VM_PAT23: par{
+					pat_i2 := bits2.reverse(D_in< 7:0>, h_flip).dout_rv;
+					pat_i3 := bits3.reverse(D_in<15:8>, h_flip).dout_rv;
+				}
+				case VM_PAT45: par{
+					pat_i4 := bits4.reverse(D_in< 7:0>, h_flip).dout_rv;
+					pat_i5 := bits5.reverse(D_in<15:8>, h_flip).dout_rv;
+				}
+				case VM_PAT67: par{
+					pat_i6 := bits6.reverse(D_in< 7:0>, h_flip).dout_rv;
+					pat_i7 := bits7.reverse(D_in<15:8>, h_flip).dout_rv;
+				}
+			}
+			finish;
+		}
+	}
+
+}
