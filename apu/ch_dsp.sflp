@@ -259,7 +259,7 @@ output dbg<8>;
 		// 18bitも17bitも変わらないので17bitで加算.
 		// 加算して符号反転するとLEが増える.
 		sel inner_data<17>;
-	if(sw_brrmul_off){
+	if(sw_brrmul_off){ // シフトと加減算バージョン
 		sel pre0_data_n<16>;
 		sel ftype2_pre0<17>, ftype2_pre1<17>;
 		sel ftype3_pre0<17>, ftype3_pre1<17>;
@@ -300,7 +300,7 @@ output dbg<8>;
 			}
 		}
 	}
-	else{
+	else{ // 乗算器バージョン
 		sel f0<8>, f1<8>;
 		switch(filter){
 			case 0:  par{ f0 =   0; f1 =   0; }
@@ -441,7 +441,7 @@ output dbg<8>;
 				intpl_pitch := 0x000000;
 			}
 			else{
-				intpl_pitch += (0x00||0b00||pitch);
+				intpl_pitch += 0x00||0b00||pitch;
 			}
 
 			// 補間ウィンドウシフト幅
@@ -458,7 +458,7 @@ output dbg<8>;
 		}
 		state st1 if(^brr_decode.do){
 			interpolate_data := pre1_intpl || 0b0000000;
-			intpl_pitch_next := ((0x61A||0b000000) >> intpl_wins);
+			intpl_pitch_next := (0x61A||0b000000) >> intpl_wins;
 			goto st2;
 		}
 		state st2 par{
@@ -468,7 +468,7 @@ output dbg<8>;
 					goto st1; finish;
 				}
 				intpl_pitch<23:12>==intpl_pitch_next<17:6> : par{
-					intpl_pitch_next += ((0x61A||0b000000) >> intpl_wins);
+					intpl_pitch_next += (0x61A||0b000000) >> intpl_wins;
 					// s16 - s16 = s17
 					sel pre_sa<17>;
 					pre_sa = (17#pre0_intpl) - (17#pre1_intpl);
