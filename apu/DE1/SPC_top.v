@@ -127,7 +127,7 @@ wire [31:0] audio_DATA;
 //	assign SDRAM_DQ = sdram_Dout_En==1'b0 ? sdram_Dout : 16'hzzzz;
 // –¢Žg—pŽž
 	assign SDRAM_CSn = 1'b1;
-	assign SDRAM_Dout = 16'hzzzz;
+	assign SDRAM_DQ = 16'hzzzz;
 
 	assign FLASH_DQ = 8'hzz;
 	assign FLASH_RSTn = 1'b1;
