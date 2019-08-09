@@ -196,13 +196,12 @@ circuit core
 
 	sel sound_R_n<17>;
 	sel sound_L<18>, sound_R<18>;
+	sound_L = 18#apu.sound_L;
 	if(SW<9>){ // 逆位相サラウンド、apu.sound_R<17bit>であること。<16bit>だとうまくいかない
-		sound_L = 18#apu.sound_L;
-		sound_R_n = (^apu.sound_R) + 1;
+		sound_R_n = -apu.sound_R;
 		sound_R = 18#sound_R_n;
 	}
 	else{
-		sound_L = 18#apu.sound_L;
 		sound_R = 18#apu.sound_R;
 	}
 	reg_wr out_L_reg<32>, out_R_reg<32>;

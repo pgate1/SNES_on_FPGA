@@ -136,7 +136,7 @@ circuit core
 	// 符号付きから符号なしに変換する
 	dac_L.din = (^sound_L_clip<15>) || sound_L_clip<14:0>;
 	sel sound_R<16>;
-	if(SW<9>) sound_R = (^sound_R_clip) + 1; // 逆位相サラウンドok
+	if(SW<9>) sound_R = -sound_R_clip; // 逆位相サラウンドok
 	else sound_R = sound_R_clip;
 	dac_R.din = (^sound_R<15>) || sound_R<14:0>;
 	Sound_Left  = dac_L.dout;

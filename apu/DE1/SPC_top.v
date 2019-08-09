@@ -147,7 +147,7 @@ wire [31:0] audio_DATA;
 
 	// make 18.4MHz
 	audio_pll audio_pll_inst (
-		.areset(g_reset), .inclk0(CLK_27[0]), .c0(CLK_18_4)
+		.inclk0(CLK_27[0]), .c0(CLK_18_4)
 	);
 
 	AUDIO_ctrl AU (
