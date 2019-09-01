@@ -1,5 +1,4 @@
 
-%i "vram_ctrl.h"
 %i "cgram_256.h"
 %i "bg.h"
 %i "obj_core.h"
@@ -23,9 +22,10 @@ circuit ppu1_core
 	reg_wr f_overscan_reg;
 	input open_bus<8>;
 
-	output VRAM_ADDR<15>, VRAM_Din<16>;
-	input VRAM_Dout<16>, VRAM_ACK;
+	output VRAM_ADDR<16>, VRAM_Din<8>;
+	input vram_dout<16>, vram_ack;
 	instrout VRAM_RD, VRAM_WE;
+	instrself vram_read(VRAM_ADDR), vram_write(VRAM_ADDR, VRAM_Din);
 
 	/* VIDEO */
 	output R<5>, G<5>, B<5>;
@@ -42,8 +42,6 @@ output dbg<16>;
 	reg_wr h_code_reg<8>;
 
 	sel Aio<8>;
-
-	vram_ctrl vram;
 
 	reg_ws f_forceblanking, f_forceblanking_v;
 	reg_wr n_brightness<4>;
@@ -184,12 +182,8 @@ output dbg<16>;
 
 	Aio = 0b00 || A;
 
-	VRAM_ADDR = vram.ADDR;
-	VRAM_Din = vram.D_out;
-	vram.D_in = VRAM_Dout;
-	vram.RD_ACK = VRAM_ACK;
-	if(vram.RD) VRAM_RD();
-	if(vram.WE) VRAM_WE();
+	instruct vram_read VRAM_RD();
+	instruct vram_write VRAM_WE();
 
 	any{
 		read_io : Dout_reg := D_out;
@@ -267,7 +261,7 @@ output dbg<16>;
 	bg1.h_scroll = bg1_h_scroll<9:0>; bg1.v_scroll = bg1_v_scroll<9:0>;
 	bg1.tile_base = bg1_tile_base; bg1.sc_size   = bg1_sc_size;
 	bg1.tile_size = bg1_tile_size; bg1.chr_base  = bg1_chr_base;
-	bg1.read_ack = vram.ack; bg1.D_in = vram.rdata;
+	bg1.read_ack = vram_ack; bg1.D_in = vram_dout;
 	bg1.scanline = scanline<7:0>; bg1.scantile = scantile;
 	bg1.vdot = vx<2:0>;
 	bg1.bg3_Hval = bg3.Hval; bg1.bg3_Vval = bg3.Vval;
@@ -279,7 +273,7 @@ output dbg<16>;
 	bg2.h_scroll = bg2_h_scroll; bg2.v_scroll = bg2_v_scroll;
 	bg2.tile_base = bg2_tile_base; bg2.sc_size   = bg2_sc_size;
 	bg2.tile_size = bg2_tile_size; bg2.chr_base  = bg2_chr_base;
-	bg2.read_ack = vram.ack; bg2.D_in = vram.rdata;
+	bg2.read_ack = vram_ack; bg2.D_in = vram_dout;
 	bg2.scanline = scanline<7:0>; bg2.scantile = scantile;
 	bg2.vdot = vx<2:0>;
 	bg2.bg3_Hval = bg3.Hval; bg2.bg3_Vval = bg3.Vval;
@@ -291,7 +285,7 @@ output dbg<16>;
 	bg3.h_scroll = bg3_h_scroll; bg3.v_scroll = bg3_v_scroll;
 	bg3.tile_base = bg3_tile_base; bg3.sc_size   = bg3_sc_size;
 	bg3.tile_size = bg3_tile_size; bg3.chr_base  = bg3_chr_base;
-	bg3.read_ack = vram.ack; bg3.D_in = vram.rdata;
+	bg3.read_ack = vram_ack; bg3.D_in = vram_dout;
 	bg3.scanline = scanline<7:0>; bg3.scantile = scantile;
 	bg3.vdot = vx<2:0>;
 	bg3.bg3_Hval = 0x0000; bg3.bg3_Vval = 0x0000;
@@ -303,7 +297,7 @@ output dbg<16>;
 	bg4.h_scroll = bg4_h_scroll; bg4.v_scroll = bg4_v_scroll;
 	bg4.tile_base = bg4_tile_base; bg4.sc_size   = bg4_sc_size;
 	bg4.tile_size = bg4_tile_size; bg4.chr_base  = bg4_chr_base;
-	bg4.read_ack = vram.ack; bg4.D_in = vram.rdata;
+	bg4.read_ack = vram_ack; bg4.D_in = vram_dout;
 	bg4.scanline = scanline<7:0>; bg4.scantile = scantile;
 	bg4.vdot = vx<2:0>;
 	bg4.bg3_Hval = 0x0000; bg4.bg3_Vval = 0x0000;
@@ -315,9 +309,9 @@ output dbg<16>;
 	obj.name_select = obj_name_select;
 	obj.name_base = obj_name_base;
 	obj.priority_rotation = f_obj_priority_rotation;
-	obj.read_ack = vram.ack;
+	obj.read_ack = vram_ack;
 	obj.oam_adrs = obj_adrs<8:2>;
-	obj.D_in = vram.rdata;
+	obj.D_in = vram_dout;
 	obj.forceblanking = f_forceblanking;
 
 	md7.f_empspace = md7_empspace; md7.f_empfill = md7_empfill;
@@ -327,8 +321,8 @@ output dbg<16>;
 	md7.rotA = md7_rA; md7.rotB = md7_rB;
 	md7.rotC = md7_rC; md7.rotD = md7_rD;
 	md7.cX = md7_cX; md7.cY = md7_cY;
-	md7.read_ack = vram.ack;
-	md7.D_in = vram.rdata;
+	md7.read_ack = vram_ack;
+	md7.D_in = vram_dout;
 	md7.scanline = scanline<7:0>;
 	md7.f_direct_color = f_direct_color;
 	md7.f_ExtBG = f_ExtBG;
@@ -517,27 +511,27 @@ output dbg<16>;
 			r2116_vaL := D_in;
 			make_vram_adrs(r2117_vaH || D_in);
 		//	if(vblank | f_forceblanking){
-				vram.read(vram_adrs_remap||0b0); // Low read
+				vram_read(vram_adrs_remap||0b0); // Low read
 		//	}
 		}
 		Aio==0x17 : par{
 			r2117_vaH := D_in<6:0>;
 			make_vram_adrs(D_in<6:0> || r2116_vaL);
 		//	if(vblank | f_forceblanking){
-				vram.read(vram_adrs_remap||0b1); // High read
+				vram_read(vram_adrs_remap||0b1); // High read
 		//	}
 		}
 		Aio==0x18 : par{
 			make_vram_adrs(vram_adrs);
 			if(vblank | f_forceblanking){
-				vram.write(vram_adrs_remap||0b0, D_in); // Low write
+				vram_write(vram_adrs_remap||0b0, D_in); // Low write
 				if(^f_vadrs_hl) vram_adrs_next();
 			}
 		}
 		Aio==0x19 : par{
 			make_vram_adrs(vram_adrs);
 			if(vblank | f_forceblanking){
-				vram.write(vram_adrs_remap||0b1, D_in); // High write
+				vram_write(vram_adrs_remap||0b1, D_in); // High write
 				if(f_vadrs_hl) vram_adrs_next();
 			}
 		}
@@ -688,19 +682,19 @@ output dbg<16>;
 			read_oam_ack := obj_adrs<0> || 0b1;
 		}
 		Aio==0x39 : par{
-			D_out = vram.rdata<7:0>;
+			D_out = vram_dout<7:0>;
 			make_vram_adrs(vram_adrs);
 			if(^f_vadrs_hl){
-				vram.read(vram_adrs_remap||0b0); // Low read
+				vram_read(vram_adrs_remap||0b0); // Low read
 				vram_adrs_next();
 			}
 			open_bus1 := D_out;
 		}
 		Aio==0x3A : par{
-			D_out = vram.rdata<15:8>;
+			D_out = vram_dout<15:8>;
 			make_vram_adrs(vram_adrs);
 			if(f_vadrs_hl){
-				vram.read(vram_adrs_remap||0b1); // High read
+				vram_read(vram_adrs_remap||0b1); // High read
 				vram_adrs_next();
 			}
 			open_bus1 := D_out;
@@ -792,12 +786,12 @@ output dbg<16>;
 		generate BG_DRAW.do();
 	}
 
-	instruct bg1.read_req if(^(vblank | f_forceblanking)) vram.read(bg1.A||0b0);
-	instruct bg2.read_req if(^(vblank | f_forceblanking)) vram.read(bg2.A||0b0);
-	instruct bg3.read_req if(^(vblank | f_forceblanking)) vram.read(bg3.A||0b0);
-	instruct bg4.read_req if(^(vblank | f_forceblanking)) vram.read(bg4.A||0b0);
-	instruct obj.read_req if(^(vblank | f_forceblanking)) vram.read(obj.A||0b0);
-	instruct md7.read_req if(^(vblank | f_forceblanking)) vram.read(0b0||md7.A||0b0);
+	instruct bg1.read_req if(^(vblank | f_forceblanking)) vram_read(bg1.A||0b0);
+	instruct bg2.read_req if(^(vblank | f_forceblanking)) vram_read(bg2.A||0b0);
+	instruct bg3.read_req if(^(vblank | f_forceblanking)) vram_read(bg3.A||0b0);
+	instruct bg4.read_req if(^(vblank | f_forceblanking)) vram_read(bg4.A||0b0);
+	instruct obj.read_req if(^(vblank | f_forceblanking)) vram_read(obj.A||0b0);
+	instruct md7.read_req if(^(vblank | f_forceblanking)) vram_read(0b0||md7.A||0b0);
 
 	instruct make_col par{
 

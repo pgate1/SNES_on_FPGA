@@ -24,7 +24,7 @@ circuit snes_core
 	instrout WRAM_RD(WRAM_ADDR), WRAM_WE(WRAM_ADDR, WRAM_Din);
 
 	// ŠO•”VRAM I/F
-	output VRAM_ADDR<15>, VRAM_Din<16>;
+	output VRAM_ADDR<16>, VRAM_Din<8>;
 	input VRAM_Dout<16>, VRAM_ACK;
 	instrout VRAM_RD, VRAM_WE;
 
@@ -108,8 +108,8 @@ reg_wr dbg_reg;
 	// ŠO•”VRAM I/F
 	VRAM_ADDR = ppu1.VRAM_ADDR;
 	VRAM_Din = ppu1.VRAM_Din;
-	ppu1.VRAM_Dout = VRAM_Dout;
-	ppu1.VRAM_ACK = VRAM_ACK;
+	ppu1.vram_dout = VRAM_Dout;
+	ppu1.vram_ack = VRAM_ACK;
 	instruct ppu1.VRAM_RD VRAM_RD();
 	instruct ppu1.VRAM_WE VRAM_WE();
 

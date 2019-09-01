@@ -16,7 +16,7 @@
 %i "../mem/ram_128kb.h"
 %i "../display.h"
 %i "VGA_ctrl.h"
-%i "../mem/ram_16x32kw.h"
+%i "../ppu/vram_16x32kw.h"
 //%i "DDS_50to5369318.h"
 %i "DDS_50to10738635.h"
 
@@ -76,7 +76,7 @@ circuit core
 	ram_128kb wram;
 	DDS_50to10738635 dds_cpu;
 
-	ram_16x32kw vram;
+	vram_16x32kw vram;
 //	DDS_50to5369318 dds_ppu;
 	instrself dds_ppu_run;
 
@@ -115,7 +115,6 @@ circuit core
 	stage_name key2btn { task do(); }
 
 	stage_name wram_ack_stg { task do(); }
-	stage_name vram_ack_stg { task do(); }
 	stage_name apu_wram_ack_stg { task do(); }
 
 	if(reset){
@@ -316,10 +315,9 @@ circuit core
 
 	instruct snes.VRAM_RD par{
 		vram.read(snes.VRAM_ADDR);
-		generate vram_ack_stg.do();
 	}
 	snes.VRAM_Dout = vram.D_out;
-	snes.VRAM_ACK = vram_ack_stg.do;
+	snes.VRAM_ACK = vram.ack;
 
 	instruct snes.VRAM_WE par{
 		vram.write(snes.VRAM_ADDR, snes.VRAM_Din);
@@ -438,10 +436,6 @@ circuit core
 	}
 
 	stage wram_ack_stg {
-		finish;
-	}
-
-	stage vram_ack_stg {
 		finish;
 	}
 

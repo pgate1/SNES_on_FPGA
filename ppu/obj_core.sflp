@@ -243,12 +243,14 @@ output dbg<16>;
 			col_low[i] = spr_buf_pat3[i]<7>||spr_buf_pat2[i]<7>||spr_buf_pat1[i]<7>||spr_buf_pat0[i]<7>;
 		}
 
-		// 描画されるべきスプライト選択 簡易記述版 12602LEs 52MHz
-		sel col_high<3>, col_low<4>;
+		// 描画されるべきスプライト選択 簡易記述版
+		sel calt<6>, col_high<3>, col_low<4>;
 		alt(i=0;i<34;i++){
-			(/&spr_buf_x[i]<8:3>)&(/|col_low[i]) : par{ col_high=spr_buf_pal[i]; col_low=col_low[i]; col_pri=spr_buf_pri[i]; }
-			else : par{ col_low=0b0000; }
+			(/&spr_buf_x[i]<8:3>)&(/|col_low[i]) : par{ calt=i; col_low=col_low[i]; }
+			else : col_low = 0b0000;
 		}
+		col_pri = spr_buf_pri[calt];
+		col_high = spr_buf_pal[calt];
 		col_enable = /|col_low;
 		col_id = 0b1 || col_high || col_low;
 	}
