@@ -21,7 +21,7 @@
 %i "../mem/ram_128kb.h"
 %i "../display.h"
 %i "VGA_ctrl.h"
-%i "../ppu/vram_16x32kw.h"
+%i "../mem/ram_32kb.h"
 //%i "DDS_50to5369318.h"
 %i "DDS_50to10738635.h"
 
@@ -114,7 +114,7 @@ circuit core
 	ram_128kb wram;
 	DDS_50to10738635 dds_cpu;
 
-	vram_16x32kw vram;
+	ram_32kb vramA, vramB;
 //	DDS_50to5369318 dds_ppu;
 	instrself dds_ppu_run;
 	instrself soft_reset;
@@ -142,17 +142,11 @@ circuit core
 	sel h_code<8>;
 	reg_wr h_code_reg<8>;
 
-	stage_name card2ram_rom { task do(); }
-	stage_name vjtag2ram_rom { task do(); }
-	stage_name card2ram_spc { task do(); }
-	stage_name vjtag2ram_spc { task do(); }
-	stage_name mem_clean { task do(); }
 	stage_name snes_line { task do(); }
 	stage_name mpu_run { task do(); }
 	stage_name clock25M { task do(); }
 //	stage_name sram_clean { task do(); }
 //	stage_name sdram_clean { task do(); }
-
 	stage_name wram_ack_stg { task do(); }
 	stage_name apu_wram_ack_stg { task do(); }
 //	stage_name lcd_view { task do(); }
@@ -160,6 +154,12 @@ circuit core
 
 	stage_name mod_apu_read_stg { task do(); }
 	stage_name mod_apu_write_stg { task do(); }
+
+	stage_name card2ram_rom { task do(); }
+	stage_name vjtag2ram_rom { task do(); }
+	stage_name card2ram_spc { task do(); }
+	stage_name vjtag2ram_spc { task do(); }
+	stage_name mem_clean { task do(); }
 
 	if(reset){
 		reset := 0b0;
@@ -377,20 +377,19 @@ circuit core
 	instruct snes.read_rom cart.read();
 	snes.D_in = cart.Dout;
 	snes.ROM_ACK = cart.ack;
-
 	instruct cart.read_rom par{
 		sdram.read(0b00||cart.rom_adrs);
 	}
 	cart.read_rom_data = sdram.rdata<7:0>;
 	cart.read_ack = sdram.ack;
 
+	instruct snes.write_rom cart.write();
+
 	instruct cart.read_sram par{
 		sdram.read(0b1100000||cart.sram_adrs);
 	}
 	cart.read_sram_data = sdram.rdata<7:0>;
-
 	cart.Din = snes.D_out;
-	instruct snes.write_rom cart.write();
 
 	instruct cart.write_sram par{
 		sdram.write(0b1100000||cart.sram_adrs, 0x000000||snes.D_out, 0b0001);
@@ -402,21 +401,36 @@ circuit core
 	}
 	snes.WRAM_Dout = wram.D_out;
 	snes.WRAM_ACK = wram_ack_stg.do;
-
 	instruct snes.WRAM_WE par{
 		wram.write(snes.WRAM_ADDR<16:0>, snes.WRAM_Din);
 	}
-
+/*
 	instruct snes.VRAM_RD par{
 	//	sram.read(0b00000 || snes.VRAM_ADDR);
 		vram.read(snes.VRAM_ADDR);
 	}
 	snes.VRAM_Dout = vram.D_out;
 	snes.VRAM_ACK = vram.ack;
-
 	instruct snes.VRAM_WE par{
 	//	sram.write(0b00000 || snes.VRAM_ADDR, snes.VRAM_Din, 0b11);
 		vram.write(snes.VRAM_ADDR, snes.VRAM_Din);
+	}
+*/
+	instruct snes.vramA_read par{
+		vramA.read(snes.vramA_adrs);
+	}
+	snes.vramA_dout = vramA.dout;
+	snes.vramA_ack = vramA.ack;
+	instruct snes.vramA_write par{
+		vramA.write(snes.vramA_adrs, snes.vramA_din);
+	}
+	instruct snes.vramB_read par{
+		vramB.read(snes.vramB_adrs);
+	}
+	snes.vramB_dout = vramB.dout;
+	snes.vramB_ack = vramB.ack;
+	instruct snes.vramB_write par{
+		vramB.write(snes.vramB_adrs, snes.vramB_din);
 	}
 
 	instruct snes.VIDEO_enable par{

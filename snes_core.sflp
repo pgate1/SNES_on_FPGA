@@ -24,9 +24,12 @@ circuit snes_core
 	instrout WRAM_RD(WRAM_ADDR), WRAM_WE(WRAM_ADDR, WRAM_Din);
 
 	// 外部VRAM I/F
-	output VRAM_ADDR<16>, VRAM_Din<8>;
-	input VRAM_Dout<16>, VRAM_ACK;
-	instrout VRAM_RD, VRAM_WE;
+	output vramA_adrs<15>, vramA_din<8>;
+	input vramA_dout<8>, vramA_ack;
+	instrout vramA_read(vramA_adrs), vramA_write(vramA_adrs, vramA_din);
+	output vramB_adrs<15>, vramB_din<8>;
+	input vramB_dout<8>, vramB_ack;
+	instrout vramB_read(vramB_adrs), vramB_write(vramB_adrs, vramB_din);
 
 	input apu_Din<8>;
 
@@ -106,12 +109,14 @@ reg_wr dbg_reg;
 	stage_name read_dma_wait { task do(); }
 
 	// 外部VRAM I/F
-	VRAM_ADDR = ppu1.VRAM_ADDR;
-	VRAM_Din = ppu1.VRAM_Din;
-	ppu1.vram_dout = VRAM_Dout;
-	ppu1.vram_ack = VRAM_ACK;
-	instruct ppu1.VRAM_RD VRAM_RD();
-	instruct ppu1.VRAM_WE VRAM_WE();
+	instruct ppu1.vramA_read vramA_read(ppu1.vramA_adrs);
+	ppu1.vramA_ack = vramA_ack;
+	instruct ppu1.vramA_write vramA_write(ppu1.vramA_adrs, ppu1.vramA_din);
+	ppu1.vramA_dout = vramA_dout;
+	instruct ppu1.vramB_read vramB_read(ppu1.vramB_adrs);
+	ppu1.vramB_ack = vramB_ack;
+	instruct ppu1.vramB_write vramB_write(ppu1.vramB_adrs, ppu1.vramB_din);
+	ppu1.vramB_dout = vramB_dout;
 
 // SilvaSaga2でバーストチェック、メモリマップが重なっていると妖精の頭が欠ける
 	any{

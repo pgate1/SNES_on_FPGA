@@ -6,9 +6,12 @@
 
 circuit mode7
 {
-	output A<14>;
-	instrout read_req;
-	input read_ack, D_in<16>;
+	output vramA_adrs<15>;
+	instrout vramA_read_req;
+	input vramA_ack, vramA_dout<8>;
+	output vramB_adrs<15>;
+	instrout vramB_read_req;
+	input vramB_ack, vramB_dout<8>;
 
 	input scanline<8>; // unsigned
 	input h_scroll<13>, v_scroll<13>; // signed
@@ -24,12 +27,11 @@ circuit mode7
 	output dir_col<15>;
 	output ext_col_en, ext_col_id<8>, ext_pri;
 
-	instrin hsync, draw;
+	instrin hsync, tile_read, chr_read;
 	output dbg;
 
-	instrself read(rid, A);
-	sel rid<2>;
-	reg rid_reg<2>;
+	instrself vramA_read(vramA_adrs);
+	instrself vramB_read(vramB_adrs);
 
 	instrin line_init;
 
@@ -39,30 +41,33 @@ circuit mode7
 	sel sx<11>, sy<11>;
 	reg_wr px<22>, py<22>;
 	mul_s16 mulx, muly;
+	reg_wr mx_t<3>, my_t<3>;
+	reg_wr px_t<4>, py_t<4>;
 
-	sel mx<10>, my<10>;
-	sel tile_data<8>;
-
-	instrself chr_read;
+	reg_wr tile_data<8>;
 	reg_wr chr_data<8>;
 
 	stage_name line_init_stage { task do(); }
-	stage_name read_wait { task do(rid_reg); }
+	stage_name readA_wait { task do(); }
+	stage_name readB_wait { task do(); }
 
-	// <8>
+	sel dy<8>;
 	if(f_v_flip) dy = ^scanline;
 	else         dy =  scanline;
 
+	sel sxc<14>, syc<14>;
 	// <s14> = <s13> - <s13>
 	sxc = (14#h_scroll) - (14#cX);
 	syc = (14#v_scroll) - (14#cY);
 
 	// RPGツクール2、キャッツラン
 	// CLIP(a) (((a)&0x2000)?((a)|~0x3FF):((a)&0x3FF))
+	sel sx<11>, sy<11>;
 	sx = sxc<13> || sxc<9:0>;
 	sy = syc<13> || syc<9:0>;
 
 	// 8bit固定少数点から整数に変換
+	sel mx<10>, my<10>;
 	mx = px<17:8>; // 10bit
 	my = py<17:8>;
 
@@ -95,9 +100,14 @@ circuit mode7
 		;
 	}
 
-	instruct read par{
-		read_req();
-		generate read_wait.do(rid);
+	instruct vramA_read par{
+		vramA_read_req();
+		generate readA_wait.do();
+	}
+
+	instruct vramB_read par{
+		vramB_read_req();
+		generate readB_wait.do();
 	}
 
 	// 初期値
@@ -105,21 +115,16 @@ circuit mode7
 		generate line_init_stage.do();
 	}
 
-	instruct draw par{
-		sel tile_adrs<14>;
-		tile_adrs = my<9:3> || mx<9:3>;
-		read(VM_TILE, tile_adrs);
-	}
+	// x-2
+	instruct tile_read par{
+		sel tile_adrs<15>;
+		tile_adrs = 0b0 || my<9:3> || mx<9:3>;
+		vramA_read(tile_adrs);
 
-	instruct chr_read par{
-		sel chr_adrs<14>;
-		chr_adrs = tile_data || my<2:0> || mx<2:0>;
-
-		if(f_empspace & (/|px<21:18> | /|py<21:18>)){ // 領域外
-			if(f_empfill) read(VM_CHR, 14#0b0); // char 0
-			else chr_data := 0x00; // 透過
-		}
-		else read(VM_CHR, chr_adrs);
+		mx_t := mx<2:0>;
+		my_t := my<2:0>;
+		px_t := px<21:18>;
+		py_t := py<21:18>;
 
 		if(f_h_flip){
 			px -= (22#rotA);
@@ -129,6 +134,18 @@ circuit mode7
 			px += (22#rotA);
 			py += (22#rotC);
 		}
+	}
+
+	// x-1
+	instruct chr_read par{
+		sel chr_adrs<15>;
+		chr_adrs = 0b0 || tile_data || my_t || mx_t;
+
+		if(f_empspace & (/|px_t | /|py_t)){ // 領域外
+			if(f_empfill) vramB_read(15#0b0); // char 0
+			else chr_data := 0x00; // 透過
+		}
+		else vramB_read(chr_adrs);
 	}
 
 	stage line_init_stage{
@@ -167,15 +184,16 @@ circuit mode7
 		}
 	}
 
-	stage read_wait {
-		if(read_ack){
-			any{
-				rid_reg==VM_TILE : par{
-					tile_data = D_in<7:0>;
-					chr_read();
-				}
-				rid_reg==VM_CHR : chr_data := D_in<15:8>;
-			}
+	stage readA_wait {
+		if(vramA_ack){
+			tile_data := vramA_dout; // vram.D_out<7:0>
+			finish;
+		}
+	}
+
+	stage readB_wait {
+		if(vramB_ack){
+			chr_data := vramB_dout; // vram.D_out<15:8>
 			finish;
 		}
 	}
