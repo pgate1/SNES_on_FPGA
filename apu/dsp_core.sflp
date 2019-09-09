@@ -145,24 +145,12 @@ instruct sw_brrmul_off par(i=0;i<8;i++){
 	}
 
 	sel main_add_L<19>, main_add_R<19>;
-	main_add_L =
-		(19#ch_0.out_L) +
-		(19#ch_1.out_L) +
-		(19#ch_2.out_L) +
-		(19#ch_3.out_L) +
-		(19#ch_4.out_L) +
-		(19#ch_5.out_L) +
-		(19#ch_6.out_L) +
-		(19#ch_7.out_L);
-	main_add_R =
-		(19#ch_0.out_R) +
-		(19#ch_1.out_R) +
-		(19#ch_2.out_R) +
-		(19#ch_3.out_R) +
-		(19#ch_4.out_R) +
-		(19#ch_5.out_R) +
-		(19#ch_6.out_R) +
-		(19#ch_7.out_R);
+	join(i=0;i<8;i++){
+		main_add_L = main_add_L + (19#ch[i].out_L);
+	}
+	join(i=0;i<8;i++){
+		main_add_R = main_add_R + (19#ch[i].out_R);
+	}
 
 	sel main_clip_L<16>, main_clip_R<16>;
 	any{
@@ -183,24 +171,12 @@ instruct sw_brrmul_off par(i=0;i<8;i++){
 	mflip := ^mflip;
 
 	sel echo_add_L<19>, echo_add_R<19>;
-	echo_add_L =
-		((19#r_EON<0>) & (19#ch_0.out_L)) +
-		((19#r_EON<1>) & (19#ch_1.out_L)) +
-		((19#r_EON<2>) & (19#ch_2.out_L)) +
-		((19#r_EON<3>) & (19#ch_3.out_L)) +
-		((19#r_EON<4>) & (19#ch_4.out_L)) +
-		((19#r_EON<5>) & (19#ch_5.out_L)) +
-		((19#r_EON<6>) & (19#ch_6.out_L)) +
-		((19#r_EON<7>) & (19#ch_7.out_L));
-	echo_add_R =
-		((19#r_EON<0>) & (19#ch_0.out_R)) +
-		((19#r_EON<1>) & (19#ch_1.out_R)) +
-		((19#r_EON<2>) & (19#ch_2.out_R)) +
-		((19#r_EON<3>) & (19#ch_3.out_R)) +
-		((19#r_EON<4>) & (19#ch_4.out_R)) +
-		((19#r_EON<5>) & (19#ch_5.out_R)) +
-		((19#r_EON<6>) & (19#ch_6.out_R)) +
-		((19#r_EON<7>) & (19#ch_7.out_R));
+	join(i=0;i<8;i++){
+		echo_add_L = echo_add_L + ((19#r_EON<i>) & (19#ch[i].out_L));
+	}
+	join(i=0;i<8;i++){
+		echo_add_R = echo_add_R + ((19#r_EON<i>) & (19#ch[i].out_R));
+	}
 
 	sel echo_clip_L<16>, echo_clip_R<16>;
 	any{
