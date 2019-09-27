@@ -295,8 +295,8 @@ circuit core
 		sdram.read(0b1100000||cart.sram_adrs);
 	}
 	cart.read_sram_data = sdram.rdata<7:0>;
-	cart.Din = snes.D_out;
 
+	cart.Din = snes.D_out;
 	instruct cart.write_sram par{
 		sdram.write(0b1100000||cart.sram_adrs, 0x00||snes.D_out, 0b01);
 	}

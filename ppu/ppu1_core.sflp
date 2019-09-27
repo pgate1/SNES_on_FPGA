@@ -39,7 +39,7 @@ circuit ppu1_core
 output dbg<16>;
 
 	reg_ws reset;
-	instrself reset_act;
+	instrin soft_reset;
 
 	instrself halt(h_code);
 	sel h_code<8>;
@@ -181,8 +181,12 @@ output dbg<16>;
 
 	if(reset){
 		reset := 0b0;
-		reset_act();
+		fixedcol_B := 0b00000;
+		fixedcol_G := 0b00000;
+		fixedcol_R := 0b00000;
 	}
+
+	instruct soft_reset reset := 0b1;
 
 	Aio = 0b00 || A;
 
@@ -375,10 +379,6 @@ output dbg<16>;
 		win1_left, win1_right, win2_left, win2_right,
 		0b1, 0b0);
 	col_win.x = vx<7:0>;
-
-	instruct reset_act par{
-
-	}
 
 	instruct halt h_code_reg := h_code;
 	f_halt = halt_code!=0x00;
@@ -802,49 +802,44 @@ output dbg<16>;
 	}
 
 	instruct make_col par{
-
-//		sel bg3_front;
-//		if(f_bg3_pri & bg3.col_pri) bg3_front = 0b1;
-//		else bg3_front = 0b0;
-
 		sel main_col_id<8>, m_z<3>;
 		any{
 			(bg_mode==0) | (bg_mode==1) : alt{
-				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & bg3.col_pri & f_bg3_pri  : par{ main_col_id=bg3.col_id; m_z=0b011; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11)      : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & bg1.col_pri              : par{ main_col_id=bg1.col_id; m_z=0b001; }
-				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & bg2.col_pri              : par{ main_col_id=bg2.col_id; m_z=0b010; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10)      : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & (^bg1.col_pri)           : par{ main_col_id=bg1.col_id; m_z=0b001; }
-				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & (^bg2.col_pri)           : par{ main_col_id=bg2.col_id; m_z=0b010; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01)      : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & bg3.col_pri & ^f_bg3_pri : par{ main_col_id=bg3.col_id; m_z=0b011; }
-				bg4_main_enable & bg4_win.main_maskn & bg4.col_enable & bg4.col_pri              : par{ main_col_id=bg4.col_id; m_z=0b100; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00)      : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & (^bg3.col_pri)           : par{ main_col_id=bg3.col_id; m_z=0b011; }
-				bg4_main_enable & bg4_win.main_maskn & bg4.col_enable & (^bg4.col_pri)           : par{ main_col_id=bg4.col_id; m_z=0b100; }
-				else : par{ main_col_id = 0x00; m_z = 0b000; }
+				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & bg3.col_pri & f_bg3_pri  : par{ main_col_id=bg3.col_id; m_z=3; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11)      : par{ main_col_id=obj.col_id; m_z=5; }
+				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & bg1.col_pri              : par{ main_col_id=bg1.col_id; m_z=1; }
+				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & bg2.col_pri              : par{ main_col_id=bg2.col_id; m_z=2; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10)      : par{ main_col_id=obj.col_id; m_z=5; }
+				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & (^bg1.col_pri)           : par{ main_col_id=bg1.col_id; m_z=1; }
+				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & (^bg2.col_pri)           : par{ main_col_id=bg2.col_id; m_z=2; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01)      : par{ main_col_id=obj.col_id; m_z=5; }
+				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & bg3.col_pri & ^f_bg3_pri : par{ main_col_id=bg3.col_id; m_z=3; }
+				bg4_main_enable & bg4_win.main_maskn & bg4.col_enable & bg4.col_pri              : par{ main_col_id=bg4.col_id; m_z=4; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00)      : par{ main_col_id=obj.col_id; m_z=5; }
+				bg3_main_enable & bg3_win.main_maskn & bg3.col_enable & (^bg3.col_pri)           : par{ main_col_id=bg3.col_id; m_z=3; }
+				bg4_main_enable & bg4_win.main_maskn & bg4.col_enable & (^bg4.col_pri)           : par{ main_col_id=bg4.col_id; m_z=4; }
+				else : par{ main_col_id = 0x00; m_z = 0; }
 			}
 			bg_mode==7 : alt{ // mode7
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11) : par{ main_col_id=obj.col_id; m_z=0b101; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10) : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg2_main_enable & bg2_win.main_maskn & md7.ext_col_en & md7.ext_pri         : par{ main_col_id=md7.ext_col_id; m_z=0b010; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01) : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg1_main_enable & bg1_win.main_maskn & md7.col_enable                       : par{ main_col_id=md7.col_id; m_z=0b001; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00) : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg2_main_enable & bg2_win.main_maskn & md7.ext_col_en & (^md7.ext_pri)      : par{ main_col_id=md7.ext_col_id; m_z=0b010; }
-				else : par{ main_col_id = 0x00; m_z = 0b000; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11) : par{ main_col_id=obj.col_id; m_z=5; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10) : par{ main_col_id=obj.col_id; m_z=5; }
+				bg2_main_enable & bg2_win.main_maskn & md7.ext_col_en & md7.ext_pri         : par{ main_col_id=md7.ext_col_id; m_z=2; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01) : par{ main_col_id=obj.col_id; m_z=5; }
+				bg1_main_enable & bg1_win.main_maskn & md7.col_enable                       : par{ main_col_id=md7.col_id; m_z=1; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00) : par{ main_col_id=obj.col_id; m_z=5; }
+				bg2_main_enable & bg2_win.main_maskn & md7.ext_col_en & (^md7.ext_pri)      : par{ main_col_id=md7.ext_col_id; m_z=2; }
+				else : par{ main_col_id = 0x00; m_z = 0; }
 			}
 			else : alt{ // mode 2,3,4,5,6
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11) : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & bg1.col_pri         : par{ main_col_id=bg1.col_id; m_z=0b001; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10) : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & bg2.col_pri         : par{ main_col_id=bg2.col_id; m_z=0b010; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01) : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & (^bg1.col_pri)      : par{ main_col_id=bg1.col_id; m_z=0b001; }
-				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00) : par{ main_col_id=obj.col_id; m_z=0b101; }
-				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & (^bg2.col_pri)      : par{ main_col_id=bg2.col_id; m_z=0b010; }
-				else : par{ main_col_id = 0x00; m_z = 0b000; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b11) : par{ main_col_id=obj.col_id; m_z=5; }
+				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & bg1.col_pri         : par{ main_col_id=bg1.col_id; m_z=1; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b10) : par{ main_col_id=obj.col_id; m_z=5; }
+				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & bg2.col_pri         : par{ main_col_id=bg2.col_id; m_z=2; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b01) : par{ main_col_id=obj.col_id; m_z=5; }
+				bg1_main_enable & bg1_win.main_maskn & bg1.col_enable & (^bg1.col_pri)      : par{ main_col_id=bg1.col_id; m_z=1; }
+				obj_main_enable & obj_win.main_maskn & obj.col_enable & (obj.col_pri==0b00) : par{ main_col_id=obj.col_id; m_z=5; }
+				bg2_main_enable & bg2_win.main_maskn & bg2.col_enable & (^bg2.col_pri)      : par{ main_col_id=bg2.col_id; m_z=2; }
+				else : par{ main_col_id = 0x00; m_z = 0; }
 			}
 		}
 		m_z_reg := m_z;
@@ -902,22 +897,22 @@ output dbg<16>;
 		}
 		fi_sub_col_id := /|sub_col_id;
 
-		sel prevent_math_sel;
+		sel col_math_enable;
 		switch(prevent_math){
-		case 0b00: prevent_math_sel = 0b0;
-		case 0b01: prevent_math_sel = col_win.main_maskn;
-		case 0b10: prevent_math_sel = ^col_win.main_maskn;
-		case 0b11: prevent_math_sel = 0b1;
+		case 0b00: col_math_enable = 0b1;
+		case 0b01: col_math_enable = ^col_win.main_maskn;
+		case 0b10: col_math_enable = col_win.main_maskn;
+		case 0b11: col_math_enable = 0b0;
 		}
 
 		if( (
-			  ((m_z==0b000) & back_colmath_enable)
-			| ((m_z==0b001) & bg1_colmath_enable)
-			| ((m_z==0b010) & bg2_colmath_enable)
-			| ((m_z==0b011) & bg3_colmath_enable)
-			| ((m_z==0b100) & bg4_colmath_enable)
-			| ((m_z==0b101) & obj_colmath_enable & obj.col_id<6>)
-			) & ^prevent_math_sel
+			  ((m_z==0) & back_colmath_enable)
+			| ((m_z==1) & bg1_colmath_enable)
+			| ((m_z==2) & bg2_colmath_enable)
+			| ((m_z==3) & bg3_colmath_enable)
+			| ((m_z==4) & bg4_colmath_enable)
+			| ((m_z==5) & obj_colmath_enable & obj.col_id<6>)
+			) & col_math_enable
 		){
 			fi_screen_math := 0b1;
 		}
@@ -932,19 +927,19 @@ output dbg<16>;
 	}
 
 	instruct screen_math par{
-		sel force_black_sel;
+		sel main_force_black;
 		switch(force_black){
-		case 0b00: force_black_sel = 0b0;
-		case 0b01: force_black_sel = col_win.main_maskn;
-		case 0b10: force_black_sel = ^col_win.main_maskn;
-		case 0b11: force_black_sel = 0b1;
+		case 0b00: main_force_black = 0b0;
+		case 0b01: main_force_black = col_win.main_maskn;
+		case 0b10: main_force_black = ^col_win.main_maskn;
+		case 0b11: main_force_black = 0b1;
 		}
 
 		alt{
-			force_black_sel : par{
+			main_force_black : par{
 				main_col = 0b000000000000000; // Black
 			}
-			f_direct_color & (bg_mode==7) & (m_z_reg==0b001) : par{
+			f_direct_color & (bg_mode==7) & (m_z_reg==1) : par{
 				main_col = md7.dir_col;
 			}
 			else : par{

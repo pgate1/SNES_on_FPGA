@@ -333,6 +333,7 @@ reg_wr dbg_reg;
 	instruct soft_reset par{
 		NMIn_pre := 0b1;
 		mpu.soft_reset();
+		ppu1.soft_reset();
 		ppu2.soft_reset();
 	}
 

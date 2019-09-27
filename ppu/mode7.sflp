@@ -36,9 +36,6 @@ circuit mode7
 	instrin line_init;
 
 	// tile adrs
-	sel dy<8>;
-	sel sxc<14>, syc<14>;
-	sel sx<11>, sy<11>;
 	reg_wr px<22>, py<22>;
 	mul_s16 mulx, muly;
 	reg_wr mx_t<3>, my_t<3>;
