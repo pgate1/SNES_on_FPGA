@@ -9,44 +9,31 @@ circuit colormath
 	instrin colcon(main_col, sub_col, fix_col);
 	output col_out<5>;
 
-	sel s_c<5>;
-	instrself cmath;
-	sel op_c<6>, math_c<6>, post_c<5>;
-
 	input n_brightness<4>, col_in<5>;
 	instrin bright(n_brightness, col_in);
 	output dout<5>;
 
-	if(fi_screen_math){
-		if(f_subscreen_math){
-			if(fi_sub_col_id){
-				s_c = sub_col;
-				cmath();
-			}
-			else{
-				s_c = fix_col;
-			}
-		}
-		else{
-			s_c = fix_col;
-			cmath();
-		}
+	sel s_c<5>;
+	if(f_subscreen_math & fi_sub_col_id){
+		s_c = sub_col;
 	}
 	else{
-		s_c = 0b00000;
+		s_c = fix_col;
 	}
 
-	if(f_colmath_op){ // Œ¸ŽZ
+	sel op_c<6>, math_c<6>;
+	if(f_colmath_op){ // Minus
 		op_c = (0b0 || main_col) - (0b0 || s_c);
 		if(op_c<5>) math_c = 0b000000;
 		else math_c = op_c;
 	}
-	else{ // ‰ÁŽZ
+	else{ // Plus
 		op_c = (0b0 || main_col) + (0b0 || s_c);
 		math_c = op_c;
 	}
 
-	if(f_half_colmath & cmath){
+	sel post_c<5>;
+	if(f_half_colmath & (fi_sub_col_id | ^f_subscreen_math)){
 		post_c = math_c<5:1>;
 	}
 	else{
@@ -54,7 +41,12 @@ circuit colormath
 		else post_c = math_c<4:0>;
 	}
 
-	col_out = post_c;
+	if(fi_screen_math){
+		col_out = post_c;
+	}
+	else{
+		col_out = main_col;
+	}
 
 	instruct bright par{
 		sel bn_c<6>;
