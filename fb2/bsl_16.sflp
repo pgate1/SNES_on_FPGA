@@ -1,5 +1,5 @@
 
-// Barrel Shifter Light 16 bit
+// Barrel Shifter Left 16 bit
 
 circuit bsl_16
 {
