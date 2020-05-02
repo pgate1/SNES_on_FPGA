@@ -113,7 +113,6 @@ circuit core
 	stage_name card2ram_spc { task do(); }
 	stage_name vjtag2ram_spc { task do(); }
 	stage_name mem_clean { task do(); }
-	stage_name lowrom_bank_copy { task do(); }
 
 	stage_name wram_ack_stg { task do(); }
 	stage_name apu_wram_ack_stg { task do(); }
@@ -604,35 +603,6 @@ circuit core
 			if(/&pA<16:0>) goto st3;
 		}
 		state st3 par{
-			if(cart.rom_bank_copy){
-				generate lowrom_bank_copy.do();
-			}
-			else{
-				rom_read_ok := 0b1;
-			}
-			goto st1;
-			finish;
-		}
-	}
-
-	// 2MBˆÈ‰º‚ÌLoROM‚ğ4MB‚Éƒ~ƒ‰[ƒŠƒ“ƒO
-	stage lowrom_bank_copy {
-		first_state st1;
-		state st1 par{
-			pA := 0;
-			goto st2;
-		}
-		state st2 if(sdram.ack){
-			sdram.read(0b0000||pA<20:0>); // <21> 2MB
-			goto st3;
-		}
-		state st3 if(sdram.ack){
-			sdram.write(0b0001||pA<20:0>, 0x00||sdram.rdata<7:0>, 0b01);
-			pA++;
-			if(/&pA<20:0>) goto st4;
-			else goto st2;
-		}
-		state st4 if(sdram.ack){
 			rom_read_ok := 0b1;
 			goto st1;
 			finish;
