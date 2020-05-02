@@ -119,9 +119,9 @@ dbg = cx4.dbg;
 		else : par{
 			switch(bank_type){
 			case 0: // LowROM <22> -> SDRAM
-				rom_adrs = 0b0 || BA<6:0> || A<14:0>; // 0x7F_7FFF 128x32kB = 4096 byte
+				rom_adrs = 0b0 || BA<6:0> || A<14:0>; // 0x7F_7FFF 128x32kB = 4096 kB
 			case 1: // HiROM <23>(<22>) -> SDRAM
-				rom_adrs = 0b0 || BA<5:0> || A<15:0>; // 0x3F_FFFF  64x64kB = 4096 byte
+				rom_adrs = 0b0 || BA<5:0> || A<15:0>; // 0x3F_FFFF  64x64kB = 4096 kB
 			}
 		}
 	}
