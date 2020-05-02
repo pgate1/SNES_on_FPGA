@@ -8,6 +8,8 @@ circuit typecheck
 
 	output ROM_type<8>;
 	reg_wr ROM_type_reg<8>;
+	output ROM_size<4>;
+	reg_wr ROM_size_reg<4>;
 	output BankType<4>;
 	reg_wr BankType_reg<4>;
 	output SRAM_size<4>;
@@ -21,6 +23,7 @@ circuit typecheck
 	point = p1 + p2;
 
 	ROM_type = ROM_type_reg;
+	ROM_size = ROM_size_reg;
 	BankType = BankType_reg;
 	SRAM_size = SRAM_size_reg;
 
@@ -56,7 +59,8 @@ circuit typecheck
 				else p1-=2;
 			}
 			a==0x17 : par{ // RomSize
-				if((data==7) | (data==8) | (data==9) | (data==10) | (data==11) | (data==12)){
+				ROM_size_reg := data<3:0>;
+				if((data==7) | (data==8) | (data==9) | (data==10) | (data==11) | (data==12) | (data==13)){
 					p1++;
 				}
 				else p1--;

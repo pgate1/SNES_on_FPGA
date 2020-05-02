@@ -22,6 +22,7 @@ circuit cartridge
 	instrin set_rom_type(rom_type_din);
 	reg_wr rom_type<8>; // 8MB ROM (BadApple=0xFF)
 	output bank_type;
+	instrout rom_bank_copy;
 
 	instrself f_cx4;
 	Cx4_core cx4;
@@ -82,6 +83,7 @@ dbg = cx4.dbg;
 	else{
 		if(bank_type==0){
 			save_ram_size = romtype_L.SRAM_size;
+			if((romtype_L.ROM_size!=12) & (romtype_L.ROM_size!=13)) rom_bank_copy();
 		}
 		else{
 			save_ram_size = romtype_H.SRAM_size;
@@ -117,9 +119,9 @@ dbg = cx4.dbg;
 		else : par{
 			switch(bank_type){
 			case 0: // LowROM <22> -> SDRAM
-				rom_adrs = 0b0 || BA<6:0> || A<14:0>;
+				rom_adrs = 0b0 || BA<6:0> || A<14:0>; // 0x7F_7FFF 128x32kB = 4096 byte
 			case 1: // HiROM <23>(<22>) -> SDRAM
-				rom_adrs = 0b0 || BA<5:0> || A<15:0>;
+				rom_adrs = 0b0 || BA<5:0> || A<15:0>; // 0x3F_FFFF  64x64kB = 4096 byte
 			}
 		}
 	}

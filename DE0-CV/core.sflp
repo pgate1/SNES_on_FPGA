@@ -113,6 +113,7 @@ circuit core
 	stage_name card2ram_spc { task do(); }
 	stage_name vjtag2ram_spc { task do(); }
 	stage_name mem_clean { task do(); }
+	stage_name lowrom_bank_copy { task do(); }
 
 	stage_name wram_ack_stg { task do(); }
 	stage_name apu_wram_ack_stg { task do(); }
@@ -497,14 +498,14 @@ circuit core
 			rom_read_ok := 0b0;
 			spc_read_ok := 0b0;
 			fat.fopen(0x0||SW<3:0>);
-			goto st3;
+			goto st2;
 		}
-		state st3 if(fat.ack){
+		state st2 if(fat.ack){
 			fat.read();
 			pA := 0;
-			goto st4;
+			goto strw;
 		}
-		state st4 if(fat.ack & sdram.ack){
+		state strw if(fat.ack & sdram.ack){
 			if((pA==0) & (fat.fdata=='S')){ // SPC
 				generate card2ram_spc.do();
 				goto st1;
@@ -569,9 +570,9 @@ circuit core
 		state st1_3 par{
 			rom_size := vjtag.recv_data || rom_size<15:0>;
 			pA := 0;
-			goto st4;
+			goto strw;
 		}
-		state st4 if(sdram.ack){
+		state strw if(sdram.ack){
 			sdram.write(pA, 0x00||vjtag.recv_data, 0b01);
 			if((pA&(0b1||0xFFFFE0))==0b0||0x007FC0) cart.check(0b0, pA<4:0>, vjtag.recv_data);
 			if((pA&(0b1||0xFFFFE0))==0b0||0x00FFC0) cart.check(0b1, pA<4:0>, vjtag.recv_data);
@@ -579,11 +580,11 @@ circuit core
 
 			if(pA==(0b0||0x7FFFFF)){
 				cart.set_rom_type(0xFF);
-				goto st8;
+				goto st3;
 			}
-			if(pA<23:0>==(rom_size-1)) goto st8;
+			if(pA<23:0>==(rom_size-1)) goto st3;
 		}
-		state st8 par{
+		state st3 par{
 			generate mem_clean.do();
 			f_reading_rom := 0b0;
 			goto st1;
@@ -591,20 +592,49 @@ circuit core
 	}
 
 	stage mem_clean { // WRAM Fill
-		first_state st8;
-		state st8 par{
+		first_state st1;
+		state st1 par{
 			pA := 0;
-			goto st9;
+			goto st2;
 		}
-		state st9 par{
+		state st2 par{
 			wram.write(pA<16:0>, 0x55);
 			apu_wram.write(pA<15:0>, 0x00);
 			pA++;
-			if(/&pA<16:0>) goto st10;
+			if(/&pA<16:0>) goto st3;
 		}
-		state st10 par{
+		state st3 par{
+			if(cart.rom_bank_copy){
+				generate lowrom_bank_copy.do();
+			}
+			else{
+				rom_read_ok := 0b1;
+			}
+			goto st1;
+			finish;
+		}
+	}
+
+	// 2MBà»â∫ÇÃLoROMÇ4MBÇ…É~ÉâÅ[ÉäÉìÉO
+	stage lowrom_bank_copy {
+		first_state st1;
+		state st1 par{
+			pA := 0;
+			goto st2;
+		}
+		state st2 if(sdram.ack){
+			sdram.read(0b0000||pA<20:0>); // <21> 2MB
+			goto st3;
+		}
+		state st3 if(sdram.ack){
+			sdram.write(0b0001||pA<20:0>, 0x00||sdram.rdata<7:0>, 0b01);
+			pA++;
+			if(/&pA<20:0>) goto st4;
+			else goto st2;
+		}
+		state st4 if(sdram.ack){
 			rom_read_ok := 0b1;
-			goto st8;
+			goto st1;
 			finish;
 		}
 	}
