@@ -518,7 +518,7 @@ circuit core
 			fat.read();
 
 			if(pA==(0b0||0x7FFFFF)){
-				cart.set_rom_type(0xFF);
+				cart.set_rom_type_8MB();
 				goto st8;
 			}
 
@@ -578,7 +578,7 @@ circuit core
 			pA++;
 
 			if(pA==(0b0||0x7FFFFF)){
-				cart.set_rom_type(0xFF);
+				cart.set_rom_type_8MB();
 				goto st3;
 			}
 			if(pA<23:0>==(rom_size-1)) goto st3;

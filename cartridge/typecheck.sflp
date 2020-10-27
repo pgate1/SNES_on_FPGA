@@ -44,7 +44,8 @@ circuit typecheck
 				else p1--;
 				// BankType
 				BankType_reg := data<3:0>;
-				if((data<3:0>==0) | (data<3:0>==1) | (data<3:0>==2) | (data<3:0>==3)){
+				if((data<3:0>==0) | (data<3:0>==1) | (data<3:0>==2) | (data<3:0>==3)
+					| (data<3:0>==5)){
 					p2+=2;
 				}
 				else p2-=2;

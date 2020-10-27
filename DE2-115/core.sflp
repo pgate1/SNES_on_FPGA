@@ -465,7 +465,7 @@ circuit core
 		dds_ppu_tim := ^dds_ppu_tim;
 	}
 
-	// 1.024MHz
+	// 1.024MHz ŽÀ‹@‚Í‚±‚ê
 	instruct dds_apu.run par{
 		// SPC700 core
 		if(rom_read_ok | spc_read_ok) apu.spc_run();
@@ -697,7 +697,7 @@ circuit core
 			fat.read();
 
 			if(pA==(0b0||0x7FFFFF)){
-				cart.set_rom_type(0xFF);
+				cart.set_rom_type_8MB();
 				goto st8;
 			}
 
@@ -736,7 +736,6 @@ circuit core
 			rom_read_ok := 0b0;
 			spc_read_ok := 0b0;
 			rom_size := rom_size<23:8> || vjtag.recv_data;
-		//	cart.set_rom_type(0);
 			goto st1_2;
 		}
 		state st1_2 par{
@@ -758,7 +757,7 @@ circuit core
 			pA++;
 
 			if(pA==(0b0||0x7FFFFF)){
-				cart.set_rom_type(0xFF);
+				cart.set_rom_type_8MB();
 				goto st8;
 			}
 			if(pA<23:0>==(rom_size-1)) goto st8;

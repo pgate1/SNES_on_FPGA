@@ -1,0 +1,16 @@
+Fitter Status : Successful - Mon Sep 09 15:56:07 2019
+Quartus II 64-Bit Version : 12.1 Build 243 01/31/2013 SP 1.33 SJ Web Edition
+Revision Name : SPC
+Top-level Entity Name : SPC_top
+Family : Cyclone II
+Device : EP2C20F484C7
+Timing Models : Final
+Total logic elements : 15,062 / 18,752 ( 80 % )
+    Total combinational functions : 14,219 / 18,752 ( 76 % )
+    Dedicated logic registers : 4,877 / 18,752 ( 26 % )
+Total registers : 4877
+Total pins : 283 / 315 ( 90 % )
+Total virtual pins : 0
+Total memory bits : 16,896 / 239,616 ( 7 % )
+Embedded Multiplier 9-bit elements : 52 / 52 ( 100 % )
+Total PLLs : 1 / 4 ( 25 % )

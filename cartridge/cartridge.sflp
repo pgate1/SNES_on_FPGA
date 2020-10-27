@@ -18,10 +18,10 @@ circuit cartridge
 	typecheck romtype_L, romtype_H;
 	input sw_romtype;
 
-	input rom_type_din<8>;
-	instrin set_rom_type(rom_type_din);
-	reg_wr rom_type<8>; // 8MB ROM (BadApple=0xFF)
-	output bank_type;
+	instrin set_rom_type_8MB();
+	reg_wr f_rom_type_8MB;
+	reg_wr rom_type<8>;
+	output bank_type<4>;
 	instrself lowrom_bank_mirror;
 
 	instrself f_cx4;
@@ -56,6 +56,7 @@ dbg = cx4.dbg;
 		romtype_L.init();
 		romtype_H.init();
 		f_hl_ok := 0b0;
+		f_rom_type_8MB := 0b0;
 	}
 
 	instruct check par{
@@ -66,26 +67,33 @@ dbg = cx4.dbg;
 		}
 	}
 
-	sel psa<8>;
-	psa = romtype_L.point - romtype_H.point;
-	if(sw_romtype){ // 反転
-		if(psa<7>) bank_type = 0;
-		else       bank_type = 1;
-	}
-	else{ // 通常
-		if(psa<7>) bank_type = 1;
-		else       bank_type = 0;
-	}
-
-	if(rom_type==0xFF){
-		save_ram_size = 0;
+	if(f_rom_type_8MB){
+		bank_type = 5;
 	}
 	else{
-		if(bank_type==0){
+		sel psa<8>;
+		psa = romtype_L.point - romtype_H.point;
+		if(sw_romtype){ // 反転
+			if(psa<7>) bank_type = romtype_L.BankType;
+			else       bank_type = romtype_H.BankType;
+		}
+		else{ // 通常
+			if(psa<7>) bank_type = romtype_H.BankType;
+			else       bank_type = romtype_L.BankType;
+		}
+	}
+
+	any{
+		// LoROM
+		(bank_type==0) |
+		(bank_type==2) |
+		(bank_type==3) : par{
 			save_ram_size = romtype_L.SRAM_size;
 			if((romtype_L.ROM_size!=12) & (romtype_L.ROM_size!=13)) lowrom_bank_mirror();
 		}
-		else{
+		// HiROM
+		(bank_type==1) |
+		(bank_type==5) : par{
 			save_ram_size = romtype_H.SRAM_size;
 		}
 	}
@@ -101,33 +109,32 @@ dbg = cx4.dbg;
 	}
 
 	// for 8MB ROM
-	instruct set_rom_type par{
-		rom_type := rom_type_din;
+	instruct set_rom_type_8MB par{
+		f_rom_type_8MB := 0b1;
 	}
 
 	// Cx4
 	if(rom_type==0xF3) f_cx4();
 
 	any{
-		rom_type==0xFF : par{
-			// 23 = 1 + 6 + 16
-			rom_adrs = (^BA<7>) || BA<5:0> || A;
-		}
 		f_cx4 : par{
 			rom_adrs = cx4.rom_adrs;
 		}
-		else : par{
-			switch(bank_type){
-			case 0: par{
+		else : any{
+			(bank_type==0) | (bank_type==2) | (bank_type==3) : par{
 				if(lowrom_bank_mirror){ // 2MB以下のLoROMを4MBにミラーリング
 					rom_adrs = 0b00 || BA<5:0> || A<14:0>; // 0x3F_7FFF 64x32kB = 2048 kB
 				}
-				else{// LowROM <22> -> SDRAM
+				else{ // LowROM <22> -> SDRAM
 					rom_adrs = 0b0 || BA<6:0> || A<14:0>; // 0x7F_7FFF 128x32kB = 4096 kB
 				}
 			}
-			case 1: // HiROM <23>(<22>) -> SDRAM
+			(bank_type==1) : par{ // HiROM <23>(<22>) -> SDRAM
 				rom_adrs = 0b0 || BA<5:0> || A<15:0>; // 0x3F_FFFF  64x64kB = 4096 kB
+			}
+			(bank_type==5) : par{
+				// 23 = 1 + 6 + 16
+				rom_adrs = (^BA<7>) || BA<5:0> || A;
 			}
 		}
 	}
@@ -148,16 +155,13 @@ dbg = cx4.dbg;
 	default: save_ram_mask = -1;
 	}
 
-	if(rom_type==0xFF){
-		sram_adrs = 0; // none
-	}
-	else any{
-		(bank_type==0) & (BA<7:3>==0b01110) & (A<15>==0b0) : par{ // $70-77 0111_0---
+	any{
+		((bank_type==0) | (bank_type==2) | (bank_type==3)) & (BA<7:3>==0b01110) & (A<15>==0b0) : par{ // $70-77 0111_0---
 			map_sram();
 			// sram20 32KB <15> x 8 bank 256KB
 			sram_adrs = (BA<2:0> || A<14:0>) & save_ram_mask;
 		}
-		(bank_type==1) & (BA<6:4>==0b011) & (A<15:13>==0b011) : par{ // $6000-$7FFF 011-_----_----_----
+		((bank_type==1) | (bank_type==5)) & (BA<6:4>==0b011) & (A<15:13>==0b011) : par{ // $6000-$7FFF 011-_----_----_----
 			map_sram();
 			// sram21 8KB <13> x 16 bank 128KB
 			sram_adrs = (0b0 || BA<3:0> || A<12:0>) & save_ram_mask;
