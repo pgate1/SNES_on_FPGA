@@ -567,10 +567,11 @@ reg_wr dbg_reg;
 			dma_adrs_reg<7:6>==0b01 : par{ // $2140-$2143 -$217F 0010_0001_01--_----
 				mod_apu_write(dma_adrs_reg<1:0>, dma_dout_reg);
 			}
-			else : par{ // 0x2180
+			dma_adrs_reg<7:2>==0b1000_00 : par{ // 0x2180-2183 1000_00--
 				cowram_access();
 				WRAM_WE(0b000 || cow_adrs, dma_dout_reg);
 			}
+		//	else : ; // e.g. 0x21FF
 		}
 		finish;
 	}

@@ -1,4 +1,6 @@
 
+%i "../fb2/mul_u5.h"
+
 circuit colormath
 {
 	input fi_screen_math, f_subscreen_math, fi_sub_col_id;
@@ -11,6 +13,7 @@ circuit colormath
 
 	input n_brightness<4>, col_in<5>;
 	instrin bright(n_brightness, col_in);
+	mul_u5 mul_bright;
 	output dout<5>;
 
 	sel s_c<5>;
@@ -49,9 +52,7 @@ circuit colormath
 	}
 
 	instruct bright par{
-		sel bn_c<6>;
-		bn_c = (0b0 || col_in) - (0b0 || (^n_brightness) || 0b0);
-		if(bn_c<5>) dout = 0b00000;
-		else dout = bn_c<4:0>;
+	//	if(n_brightness==0x0) dout = 0b00000; // ‚±‚ê‚Íppu1_core‚Å‚â‚Á‚Ä‚é
+		dout = mul_bright.con(col_in, (0b0||n_brightness)+1).dout<8:4>;
 	}
 }

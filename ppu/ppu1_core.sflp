@@ -1063,7 +1063,7 @@ output dbg<16>;
 		first_state sst;
 		par{
 			// 0ライン目は非表示にする
-			// bright==0でも黒にする
+			// brightness==0でも黒にする
 			// f_forceblanking_vだとバハムートラグーンで線が入る
 			black = (scanline==0b000000000) | vblank | f_forceblanking | (n_brightness==0x0);
 		}
