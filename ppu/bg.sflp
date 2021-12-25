@@ -193,10 +193,10 @@ dbg = dbg_reg;
 			}
 		}
 
-		if(	(((id==0b00) & s_bg3_Hval<13>) | ((id==0b01) & s_bg3_Hval<14>)) ){
+		if( ((id==0b00) & s_bg3_Hval<13>) | ((id==0b01) & s_bg3_Hval<14>) ){
 			fi_ofs_x();
 		}
-		if(	(((id==0b00) & s_bg3_Vval<13>) | ((id==0b01) & s_bg3_Vval<14>)) ){
+		if( ((id==0b00) & s_bg3_Vval<13>) | ((id==0b01) & s_bg3_Vval<14>) ){
 			fi_ofs_y();
 		}
 

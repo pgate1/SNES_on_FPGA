@@ -81,8 +81,7 @@ reg_wr ready_rnd<6>;
 		NMI_reg := 0b0;
 		IRQ_reg := 0b0;
 		f_cpu_speed_reg := 0b0;
-	//	scanline_tmp := 261;
-	//	scanline := 261;
+		scanline := 261; // for sim
 		h_code_reg := 0x00;
 	}
 
