@@ -54,9 +54,9 @@ circuit echo_mod
 	eA = eA_reg;
 	eDout = eDout_reg;
 
-	sel post_buf_L<16>, post_buf_R<16>;
-	post_buf_L = e_LH || e_LL;
-	post_buf_R = e_RH || e_RL;
+	sel post_buf_L_0<16>, post_buf_R_0<16>;
+	post_buf_L_0 = e_LH || e_LL;
+	post_buf_R_0 = e_RH || e_RL;
 
 	// エコーフィードバック音量
 	// s16 * s8 -1 = s23
@@ -72,12 +72,12 @@ circuit echo_mod
 	sel pre_buf_L<16>, pre_buf_R<16>;
 	any{
 		fb_add_L<16:15>==0b10 : pre_buf_L = 0x8000;
-		fb_add_L<16:15>==0b01 : pre_buf_L = 0x7000;
+		fb_add_L<16:15>==0b01 : pre_buf_L = 0x7FFF;
 		else                  : pre_buf_L = fb_add_L<15:0>;
 	}
 	any{
 		fb_add_R<16:15>==0b10 : pre_buf_R = 0x8000;
-		fb_add_R<16:15>==0b01 : pre_buf_R = 0x7000;
+		fb_add_R<16:15>==0b01 : pre_buf_R = 0x7FFF;
 		else                  : pre_buf_R = fb_add_R<15:0>;
 	}
 
@@ -102,8 +102,8 @@ circuit echo_mod
 		pre_L_reg := pre_L;
 		pre_R_reg := pre_R;
 
-		post_buf_L_1 := post_buf_L;
-		post_buf_R_1 := post_buf_R;
+		post_buf_L_1 := post_buf_L_0;
+		post_buf_R_1 := post_buf_R_0;
 		post_buf_L_2 := post_buf_L_1;
 		post_buf_R_2 := post_buf_R_1;
 		post_buf_L_3 := post_buf_L_2;
@@ -203,8 +203,8 @@ circuit echo_mod
 		first_state st0;
 		state st0 par{
 			// s16 * s8 -1 = s23 -7 = s16
-			fir_add_L := 19#fir_mul_L.con(post_buf_L, 16#FIR_0).dout<22:7>;
-			fir_add_R := 19#fir_mul_R.con(post_buf_R, 16#FIR_0).dout<22:7>;
+			fir_add_L := 19#fir_mul_L.con(post_buf_L_0, 16#FIR_0).dout<22:7>;
+			fir_add_R := 19#fir_mul_R.con(post_buf_R_0, 16#FIR_0).dout<22:7>;
 			goto st1;
 		}
 		state st1 par{
@@ -251,14 +251,14 @@ circuit echo_mod
 		}
 		state st8 par{
 			any{
-				fir_add_L<18:15>==0b1110 : post_fir_L := 0x8000;
-				fir_add_L<18:15>==0b0001 : post_fir_L := 0x7FFF;
-				else                     : post_fir_L := fir_add_L<15:0>;
+				(fir_add_L<18>==0b1) & (fir_add_L<17:15>!=0b111) : post_fir_L := 0x8000;
+				(fir_add_L<18>==0b0) & (fir_add_L<17:15>!=0b000) : post_fir_L := 0x7FFF;
+				else : post_fir_L := fir_add_L<15:0>;
 			}
 			any{
-				fir_add_R<18:15>==0b1110 : post_fir_R := 0x8000;
-				fir_add_R<18:15>==0b0001 : post_fir_R := 0x7FFF;
-				else                     : post_fir_R := fir_add_R<15:0>;
+				(fir_add_R<18>==0b1) & (fir_add_R<17:15>!=0b111) : post_fir_R := 0x8000;
+				(fir_add_R<18>==0b0) & (fir_add_R<17:15>!=0b000) : post_fir_R := 0x7FFF;
+				else : post_fir_R := fir_add_R<15:0>;
 			}
 			goto st0;
 			finish;

@@ -100,14 +100,7 @@ output dbg<8>;
 
 	alt{
 		doing!=0b00 : ;
-		dsp.read_req : par{
-			generate dsp_read.do(dsp.vA);
-			doing := 0b10;
-		}
-		dsp.write_req : par{
-			generate dsp_write.do(dsp.vA, dsp.Dout);
-			doing := 0b10;
-		}
+		// SPC700からのアクセスを優先する
 		spc.read_req : par{
 			generate spc_read.do(spc.A);
 			doing := 0b01;
@@ -115,6 +108,14 @@ output dbg<8>;
 		spc.write_req : par{
 			generate spc_write.do(spc.A, spc.Dout);
 			doing := 0b01;
+		}
+		dsp.read_req : par{
+			generate dsp_read.do(dsp.vA);
+			doing := 0b10;
+		}
+		dsp.write_req : par{
+			generate dsp_write.do(dsp.vA, dsp.Dout);
+			doing := 0b10;
 		}
 	}
 
@@ -226,6 +227,7 @@ instruct sw_brrmul_off dsp.sw_brrmul_off();
 		if(ctrl_reg<2>) timer2.run();
 	}
 
+	// DSP 128kHz (32kHz×4)
 	instruct dsp_run if(^soft_reset){
 		dsp.run();
 	}

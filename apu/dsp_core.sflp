@@ -62,168 +62,17 @@ instrin sw_brrmul_off;
 		reset := 0;
 	}
 
-	AH = 0b0 || io_adrs<6:4>;
-	AL = io_adrs<3:0>;
-
-	// read_reqが出ているときは一旦read_ackで落とす
-	alt{
-		ack : ;
-		(doing<3> & echo.read_req) |
-		((doing==0x0) & ch_0.read_req) | ((doing==0x1) & ch_1.read_req) |
-		((doing==0x2) & ch_2.read_req) | ((doing==0x3) & ch_3.read_req) |
-		((doing==0x4) & ch_4.read_req) | ((doing==0x5) & ch_5.read_req) |
-		((doing==0x6) & ch_6.read_req) | ((doing==0x7) & ch_7.read_req) : par{
-			read_req(); reading();
-		}
+	instruct reset_in par{
+		reset_act();
+	}
+	
+	instruct reset_act par{
+		r_FLG := 0xE0;
+		noise_LFSR := 0b100_0000_0000_0000;
 	}
 
-	alt{
-		ack : ;
-		(doing<3> & echo.write_req) : par{
-			write_req(); writing();
-		}
-	}
-
-	if(ack | ((^reading) & (^writing))){
-		doing++;
-	}
-
-	any(i=0;i<8;i++){
-		doing==(0b0||i) : vA = ch[i].vA;
-		else : vA = echo.eA;
-	}
-
-	par(i=0;i<8;i++){
-		ch[i].vD = vD;
-	}
-
-instruct sw_brrmul_off par(i=0;i<8;i++){
-	ch[i].sw_brrmul_off();
-}
-
-	echo.eDin = vD;
-
-	par(i=0;i<8;i++){
-		ch[i].DIR = r_DIR;
-	}
-
-	Dout = echo.eDout;
-
-	// ノイズ生成
-	sel noise_freq<8>;
-	noise_freq = 0b000||r_FLG<4:0>;
-	par(i=0;i<8;i++){
-		ch[i].noise = noise_LFSR;
-	}
-	par(i=0;i<8;i++){
-		ch[i].f_noise = r_NON<i>;
-	}
-
-	// ピッチモジュレーション
-	par(i=0;i<8;i++){
-		ch[i].f_pmod = r_PMON<i>;
-	}
-	ch_0.voice_in = 0x0000;
-	ch_1.voice_in = ch_0.voice_out;
-	ch_2.voice_in = ch_1.voice_out;
-	ch_3.voice_in = ch_2.voice_out;
-	ch_4.voice_in = ch_3.voice_out;
-	ch_5.voice_in = ch_4.voice_out;
-	ch_6.voice_in = ch_5.voice_out;
-	ch_7.voice_in = ch_6.voice_out;
-
-/*
-	any(i=0;i<8;i++){
-		mute<i> : ch[i].key_off();
-	}
-*/
-	par(i=0;i<8;i++){
-		ch[i].sw_mute = mute<i>;
-	}
-	par(i=0;i<8;i++){
-		instruct sw_intpl_off ch[i].sw_intpl_off();
-	}
-
-	sel main_add_L<19>, main_add_R<19>;
-	join(i=0;i<8;i++){
-		main_add_L = main_add_L + (19#ch[i].out_L);
-	}
-	join(i=0;i<8;i++){
-		main_add_R = main_add_R + (19#ch[i].out_R);
-	}
-
-	sel main_clip_L<16>, main_clip_R<16>;
-	any{
-		main_add_L<18:15>==0b1110 : main_clip_L = 0x8000;
-		main_add_L<18:15>==0b0001 : main_clip_L = 0x7FFF;
-		else                      : main_clip_L = main_add_L<15:0>;
-	}
-	any{
-		main_add_R<18:15>==0b1110 : main_clip_R = 0x8000;
-		main_add_R<18:15>==0b0001 : main_clip_R = 0x7FFF;
-		else                      : main_clip_R = main_add_R<15:0>;
-	}
-
-	// s16 * s8 -1 -> s23 -7 = s16
-	reg_wr mflip;
-	if(mflip) main_mvol_L := mul_vol.con(main_clip_L, 16#r_MVOL_L).dout<22:7>;
-	else      main_mvol_R := mul_vol.con(main_clip_R, 16#r_MVOL_R).dout<22:7>;
-	mflip := ^mflip;
-
-	sel echo_add_L<19>, echo_add_R<19>;
-	join(i=0;i<8;i++){
-		echo_add_L = echo_add_L + ((19#r_EON<i>) & (19#ch[i].out_L));
-	}
-	join(i=0;i<8;i++){
-		echo_add_R = echo_add_R + ((19#r_EON<i>) & (19#ch[i].out_R));
-	}
-
-	sel echo_clip_L<16>, echo_clip_R<16>;
-	any{
-		echo_add_L<18:15>==0b1110 : echo_clip_L = 0x8000;
-		echo_add_L<18:15>==0b0001 : echo_clip_L = 0x7FFF;
-		else                      : echo_clip_L = echo_add_L<15:0>;
-	}
-	any{
-		echo_add_R<18:15>==0b1110 : echo_clip_R = 0x8000;
-		echo_add_R<18:15>==0b0001 : echo_clip_R = 0x7FFF;
-		else                      : echo_clip_R = echo_add_R<15:0>;
-	}
-
-	instruct sw_echo_off echo.sw_echo_off();
-	echo.ESA = r_ESA;
-	echo.EDL = r_EDL;
-	echo.EFB = r_EFB;
-	par(i=0;i<8;i++){
-		echo.FIR[i] = r_FIR[i];
-	}
-	echo.EVOL_L = r_EVOL_L;
-	echo.EVOL_R = r_EVOL_R;
-	echo.f_notwrite = r_FLG<5>; // 1:Echo buffer not write.
-
-	echo.pre_L = echo_clip_L;
-	echo.pre_R = echo_clip_R;
-
-	// s16 + s16 = s17
-	sel out_add_L<17>, out_add_R<17>;
-	if(^sw_echo_off) out_add_L = (17#main_mvol_L) + (17#echo.out_L);
-	else out_add_L = 17#main_mvol_L;
-
-	if(^sw_echo_off) out_add_R = (17#main_mvol_R) + (17#echo.out_R);
-	else out_add_R = 17#main_mvol_R;
-
-	reg_wr out_L_reg<17>, out_R_reg<17>;
-	out_L_reg := out_add_L;
-	out_R_reg := out_add_R;
-
-	if(r_FLG<6>==0b0){
-		out_L = out_L_reg;
-		out_R = out_R_reg;
-	}
-	else{
-		out_L = 0;
-		out_R = 0;
-	}
+f_halt = ch_0.f_halt | ch_1.f_halt | ch_2.f_halt | ch_3.f_halt |
+         ch_4.f_halt | ch_5.f_halt | ch_6.f_halt | ch_7.f_halt;
 
 //dbg = /|vD | ch_0.dbg;
 dbg = ch_6.dbg;
@@ -237,17 +86,8 @@ dbg = ch_6.dbg;
 	disp_freq_2 = ch_4.disp_freq @ ch_5.disp_freq;
 	disp_freq_3 = ch_6.disp_freq @ ch_7.disp_freq;
 
-f_halt = ch_0.f_halt | ch_1.f_halt | ch_2.f_halt | ch_3.f_halt |
-         ch_4.f_halt | ch_5.f_halt | ch_6.f_halt | ch_7.f_halt;
-
-	instruct reset_in par{
-		reset_act();
-	}
-	
-	instruct reset_act par{
-		r_FLG := 0xE0;
-		noise_LFSR := 0b100_0000_0000_0000;
-	}
+	AH = 0b0 || io_adrs<6:4>;
+	AL = io_adrs<3:0>;
 
 	instruct io_write any{
 		AL==0xA : ; // none
@@ -335,6 +175,16 @@ f_halt = ch_0.f_halt | ch_1.f_halt | ch_2.f_halt | ch_3.f_halt |
 		}
 	}
 
+	// ノイズ生成
+	sel noise_freq<8>;
+	noise_freq = 0b000||r_FLG<4:0>;
+	par(i=0;i<8;i++){
+		ch[i].noise = noise_LFSR;
+	}
+	par(i=0;i<8;i++){
+		ch[i].f_noise = r_NON<i>;
+	}
+
 	instruct run par{ // 128kHz
 		par(i=0;i<8;i++){
 			ch[i].run();
@@ -360,11 +210,197 @@ f_halt = ch_0.f_halt | ch_1.f_halt | ch_2.f_halt | ch_3.f_halt |
 		echo.ack();
 	}
 
+	// read_reqが出ているときは一旦read_ackで落とす
+	alt{
+		ack : ;
+		(doing<3> & echo.read_req) |
+		((doing==0x0) & ch_0.read_req) | ((doing==0x1) & ch_1.read_req) |
+		((doing==0x2) & ch_2.read_req) | ((doing==0x3) & ch_3.read_req) |
+		((doing==0x4) & ch_4.read_req) | ((doing==0x5) & ch_5.read_req) |
+		((doing==0x6) & ch_6.read_req) | ((doing==0x7) & ch_7.read_req) : par{
+			read_req(); reading();
+		}
+	}
+
+	alt{
+		ack : ;
+		(doing<3> & echo.write_req) : par{
+			write_req(); writing();
+		}
+	}
+
+	Dout = echo.eDout;
+
+	any(i=0;i<8;i++){
+		doing==(0b0||i) : vA = ch[i].vA;
+		else : vA = echo.eA;
+	}
+
+	if(ack | ((^reading) & (^writing))){
+		doing++;
+	}
+
 	instruct ack par{
 		any(i=0;i<8;i++){
 			doing==(0b0||i) : ch[i].read_ack();
 			else : echo.ack();
 		}
+	}
+
+	par(i=0;i<8;i++){
+		ch[i].vD = vD;
+	}
+
+	echo.eDin = vD;
+
+instruct sw_brrmul_off par(i=0;i<8;i++){
+	ch[i].sw_brrmul_off();
+}
+
+	par(i=0;i<8;i++){
+		ch[i].DIR = r_DIR;
+	}
+
+	// ピッチモジュレーション
+	par(i=0;i<8;i++){
+		ch[i].f_pmod = r_PMON<i>;
+	}
+	ch_0.voice_in = 0x0000;
+	ch_1.voice_in = ch_0.voice_out;
+	ch_2.voice_in = ch_1.voice_out;
+	ch_3.voice_in = ch_2.voice_out;
+	ch_4.voice_in = ch_3.voice_out;
+	ch_5.voice_in = ch_4.voice_out;
+	ch_6.voice_in = ch_5.voice_out;
+	ch_7.voice_in = ch_6.voice_out;
+
+/*
+	any(i=0;i<8;i++){
+		mute<i> : ch[i].key_off();
+	}
+*/
+	par(i=0;i<8;i++){
+		ch[i].sw_mute = mute<i>;
+	}
+	par(i=0;i<8;i++){
+		instruct sw_intpl_off ch[i].sw_intpl_off();
+	}
+
+	sel main_add_L<19>, main_add_R<19>;
+	join(i=0;i<8;i++){
+		main_add_L = main_add_L + (19#ch[i].out_L);
+	}
+	join(i=0;i<8;i++){
+		main_add_R = main_add_R + (19#ch[i].out_R);
+	}
+
+	sel main_clip_L<16>, main_clip_R<16>;
+	any{
+		(main_add_L<18>==0b1) & (main_add_L<17:15>!=0b111) : main_clip_L = 0x8000;
+		(main_add_L<18>==0b0) & (main_add_L<17:15>!=0b000) : main_clip_L = 0x7FFF;
+		else : main_clip_L = main_add_L<15:0>;
+	}
+	any{
+		(main_add_R<18>==0b1) & (main_add_R<17:15>!=0b111) : main_clip_R = 0x8000;
+		(main_add_R<18>==0b0) & (main_add_R<17:15>!=0b000) : main_clip_R = 0x7FFF;
+		else : main_clip_R = main_add_R<15:0>;
+	}
+/*
+	// クリップしながら加算
+	par(i=0;i<8;i++){
+		add_clip_L.din[i] = ch[i].out_L;
+	}
+	main_clip_L = add_clip_L.dout;
+
+	par(i=0;i<8;i++){
+		add_clip_R.din[i] = ch[i].out_R;
+	}
+	main_clip_R = add_clip_R.dout;
+*/
+	// s16 * s8 -1 -> s23 -7 = s16
+	reg_wr mflip;
+	if(mflip) main_mvol_L := mul_vol.con(main_clip_L, 16#r_MVOL_L).dout<22:7>;
+	else      main_mvol_R := mul_vol.con(main_clip_R, 16#r_MVOL_R).dout<22:7>;
+	mflip := ^mflip;
+/*
+	// test
+	main_mvol_L := main_add_L;
+	main_mvol_R := main_add_R;
+*/
+	sel echo_add_L<19>, echo_add_R<19>;
+	join(i=0;i<8;i++){
+		echo_add_L = echo_add_L + ((19#r_EON<i>) & (19#ch[i].out_L));
+	}
+	join(i=0;i<8;i++){
+		echo_add_R = echo_add_R + ((19#r_EON<i>) & (19#ch[i].out_R));
+	}
+
+	sel echo_clip_L<16>, echo_clip_R<16>;
+	any{
+		(echo_add_L<18>==0b1) & (echo_add_L<17:15>!=0b111) : echo_clip_L = 0x8000;
+		(echo_add_L<18>==0b0) & (echo_add_L<17:15>!=0b000) : echo_clip_L = 0x7FFF;
+		else : echo_clip_L = echo_add_L<15:0>;
+	}
+	any{
+		(echo_add_R<18>==0b1) & (echo_add_R<17:15>!=0b111) : echo_clip_R = 0x8000;
+		(echo_add_R<18>==0b0) & (echo_add_R<17:15>!=0b000) : echo_clip_R = 0x7FFF;
+		else : echo_clip_R = echo_add_R<15:0>;
+	}
+/*
+	par(i=0;i<8;i++){
+		add_clip_echo_L.din[i] = (16#r_EON<i>) & ch[i].out_L;
+	}
+	echo_clip_L = add_clip_echo_L.dout;
+
+	par(i=0;i<8;i++){
+		add_clip_echo_R.din[i] = (16#r_EON<i>) & ch[i].out_R;
+	}
+	echo_clip_R = add_clip_echo_R.dout;
+*/
+	instruct sw_echo_off echo.sw_echo_off();
+	echo.ESA = r_ESA;
+	echo.EDL = r_EDL;
+	echo.EFB = r_EFB;
+	par(i=0;i<8;i++){
+		echo.FIR[i] = r_FIR[i];
+	}
+	echo.EVOL_L = r_EVOL_L;
+	echo.EVOL_R = r_EVOL_R;
+	echo.f_notwrite = r_FLG<5>; // 1:Echo buffer not write.
+
+	echo.pre_L = echo_clip_L;
+	echo.pre_R = echo_clip_R;
+
+	// s16 + s16 = s17
+	sel out_add_L<17>, out_add_R<17>;
+	if(^sw_echo_off) out_add_L = (17#main_mvol_L) + (17#echo.out_L);
+	else out_add_L = 17#main_mvol_L;
+
+	if(^sw_echo_off) out_add_R = (17#main_mvol_R) + (17#echo.out_R);
+	else out_add_R = 17#main_mvol_R;
+
+	reg_wr out_L_reg<17>, out_R_reg<17>;
+	out_L_reg := out_add_L;
+	out_R_reg := out_add_R;
+/*
+	any{
+		out_add_L<16:15>==0b10 : out_L_reg := 0x8000;
+		out_add_L<16:15>==0b01 : out_L_reg := 0x7FFF;
+		else                   : out_L_reg := out_add_L<15:0>;
+	}
+	any{
+		out_add_R<16:15>==0b10 : out_R_reg := 0x8000;
+		out_add_R<16:15>==0b01 : out_R_reg := 0x7FFF;
+		else                   : out_R_reg := out_add_R<15:0>;
+	}
+*/
+	if(r_FLG<6>==0b0){
+		out_L = out_L_reg;
+		out_R = out_R_reg;
+	}
+	else{
+		out_L = 0;
+		out_R = 0;
 	}
 
 	// 32KHz

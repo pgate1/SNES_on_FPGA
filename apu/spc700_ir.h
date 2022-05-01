@@ -74,7 +74,7 @@
 %d I_POP    ((ir==0xAE) | (ir==0xCE) | (ir==0xEE) | (ir==0x8E))
 %d I_SET1    (ir<4:0>==0b00010)
 %d I_CLR1    (ir<4:0>==0b10010)
-%d I_TEST1   (ir==0x0E)
+%d I_TSET1   (ir==0x0E)
 %d I_TCLR1   (ir==0x4E)
 %d I_AND1   ((ir==0x4A) | (ir==0x6A))
 %d I_OR1    ((ir==0x0A) | (ir==0x2A))

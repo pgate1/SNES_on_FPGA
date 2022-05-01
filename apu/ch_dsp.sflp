@@ -246,12 +246,17 @@ output dbg<8>;
 		sel now_data<16>;
 		any{
 			(range==0x0) : par{
+				// ssss_ssss_ssss_senn
 				now_data = 16#nibble<3:1>;
 			}
 			(range==0xD) | (range==0xE) | (range==0xF) : par{ // 13,14,15
-				now_data = (5#nibble<3>) || 0b00000000000;
+				// n<3> ? 0xF800 : 0x0000
+				now_data = (5#nibble<3>) || 11#0b0;
 			}
-			else : now_data = (16#nibble) << (range-0x1);
+			else : par{
+				// senn_n000_0000_0000 (<<12)
+				now_data = (16#nibble) << (range-0x1);
+			}
 		}
 
 		// New BRRƒtƒBƒ‹ƒ^ 2014/9/14

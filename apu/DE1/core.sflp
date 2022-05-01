@@ -306,7 +306,7 @@ circuit core
 		reg_wr dsp_timing<3>;
 		dsp_timing++;
 		if(/&dsp_timing){ // 8分周
-// 動かしておかないと曲切り替え時にノイズが乗る
+			// 動かしておかないと曲切り替え時にノイズが乗る
 			/*if(spc_read_ok)*/ apu.dsp_run();
 		}
 	}

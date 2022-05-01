@@ -1064,14 +1064,14 @@ output dbg<8>;
 					}
 				}
 				I_TCALL : any{
-// アラビアンナイト(渓谷)にて修正
+					// アラビアンナイト(渓谷)にて修正
 					ist==0b000 : par{
-//						read(READ_AL, 0xFF || 0b110 || ir<7:4> || 0b0);
+					//	read(READ_AL, 0xFF || 0b110 || ir<7:4> || 0b0);
 						read(READ_AL, 0xFF || 0b110 || (^ir<7:4>) || 0b0);
 						ist := 0b001;
 					}
 					ist==0b001 : par{
-//						read(READ_AH, 0xFF || 0b110 || ir<7:4> || 0b1);
+					//	read(READ_AH, 0xFF || 0b110 || ir<7:4> || 0b1);
 						read(READ_AH, 0xFF || 0b110 || (^ir<7:4>) || 0b1);
 						ist := 0b010;
 					}
@@ -1175,7 +1175,7 @@ output dbg<8>;
 				ist==ST_N : nexti();
 			}
 
-			I_TEST1 | I_TCLR1 : any{
+			I_TSET1 | I_TCLR1 : any{
 				0b1 : adrs_absolute();
 				ist==ST_R : par{
 					read(READ_DATA, adrs);
@@ -1183,10 +1183,11 @@ output dbg<8>;
 				}
 				ist==0b101 : par{
 					any{
-						I_TEST1 : data := data | ra;
+						I_TSET1 : data := data | ra;
 						I_TCLR1 : data := data & (^ra);
 					}
-					nz_flags(data & ra);
+				//	nz_flags(data & ra);
+					nz_flags(alu.sub(ra, data, 0b1).dout); // 2022/05/01 修正
 					ist := ST_W;
 				}
 				ist==ST_W : par{
