@@ -13,7 +13,7 @@ circuit VGA_ctrl
 
 	reg_wr h_count<10>, v_count<10>;
 	reg_ws h_sync_reg, v_sync_reg;
-	instrself h_timming, v_timming;
+	instrself h_timing, v_timing;
 
 	if(reset){
 		v_count := 2 + 33 -4; // -4‚Í”÷’²®
@@ -26,10 +26,10 @@ circuit VGA_ctrl
 	win_valid = h_view_valid & v_dis_valid;
 	dis_valid = h_dis_valid  & v_dis_valid;
 
-	instruct run h_timming();
+	instruct run h_timing();
 
 	// 25 MHz
-	instruct h_timming par{
+	instruct h_timing par{
 		any{
 			h_count==0 : par{
 				h_sync_reg := 0b0;
@@ -57,12 +57,12 @@ circuit VGA_ctrl
 
 		if(h_count==(800-1)){
 			h_count := 0;
-			v_timming();
+			v_timing();
 		}
 		else h_count++;
 	}
 
-	instruct v_timming par{
+	instruct v_timing par{
 		any{
 			v_count==0 : par{
 				v_sync_reg := 0b0;
