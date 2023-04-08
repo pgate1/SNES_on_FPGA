@@ -341,12 +341,12 @@ output dbg<8>;
 	instruct adrs_xy par{
 		any{
 			ist==0b000 : par{
-				read(READ_DATA, 0b0000000 || fp || rx);
+				read(READ_DATA, 0b0000000 || fp || ry);
 				ist := 0b001;
 			}
 			ist==0b001 : par{
 				ah := 0b0000000 || fp;
-				al := ry;
+				al := rx;
 				ist := ST_ME;
 			}
 		}
@@ -864,8 +864,15 @@ output dbg<8>;
 					any{
 						I_ADDW : par{
 							add16.con(ry||ra, dwh||dwl, 0b0);
+							fh := ry<4> @ dwh<4> @ add16.dout<12>; // 20230407 ’Ç‰Á
+							fv := (^(ry<7> @ dwh<7>)) & (ry<7> @ add16.dout<15>); // 20230407 ’Ç‰Á
 						}
-						I_SUBW | I_CMPW : par{
+						I_SUBW : par{
+							add16.con(ry||ra, ^(dwh||dwl), 0b1);
+							fh := ^(ry<4> @ dwh<4> @ add16.dout<12>); // 20230407 ’Ç‰Á
+							fv := (ry<7> @ dwh<7>) & (ry<7> @ add16.dout<15>); // 20230407 ’Ç‰Á
+						}
+						I_CMPW : par{
 							add16.con(ry||ra, ^(dwh||dwl), 0b1);
 						}
 					}

@@ -95,3 +95,5 @@
 %d I_PLD (ir==0x2B)
 
 %d I_WAI (ir==0xCB)
+
+%d I_WDM (ir==0x42)

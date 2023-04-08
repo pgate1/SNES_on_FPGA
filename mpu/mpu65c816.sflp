@@ -1389,11 +1389,9 @@ if(read_wait.do & ^read_ack) halt(0x35);
 							nz_flags(fx, ry);
 						}
 						I_TXS : par{
-							if(fe) halt(0x12);
 							spl := rxl;
 							if(fe) sph := 0x01;
 							else   sph := rxh;
-							nz_flags(fe, rx);
 						}
 						I_TSX : par{
 							rxl := spl;
@@ -1671,7 +1669,17 @@ if(read_wait.do & ^read_ack) halt(0x35);
 				}
 				ist==0x4 : nexti();
 			}
-// –¢ŽÀ‘• WDM STP
+
+			I_WDM : any{
+				ist==0x0 : par{
+					read(READ_WL, rpb, pc);
+					pc_inc();
+					ist := 0xA;
+				}
+				ist==0xA : nexti();
+			}
+
+// –¢ŽÀ‘• STP
 			else : halt(0xDB);
 		} // ir any
 
