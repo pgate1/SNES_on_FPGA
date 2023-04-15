@@ -635,12 +635,19 @@ if(read_wait.do & ^read_ack) halt(0x35);
 	stage interrupt {
 		par{
 			finish;
-			if(fe) halt(0x74);
+		//	if(fe) halt(0x74);
 			any{
 				ist==0x0 : par{
+/*
 					stack_push(rpb);
 					rpb := 0x00;
 					if((COP_do | BRK_do) & ^fe) pc_inc();
+*/
+					if(^fe){
+						stack_push(rpb);
+						rpb := 0x00;
+						if(COP_do | BRK_do) pc_inc();
+					}
 					ist := 0x1;
 				}
 				ist==0x1 : par{
@@ -654,13 +661,18 @@ if(read_wait.do & ^read_ack) halt(0x35);
 				ist==0x3 : par{
 					stack_push(state_pack);
 					fi := 0b1;
-				//	if(COP_do | BRK_do) fd := 0b0;
 					fd := 0b0; // 20171114 êπåï3èCê≥
 					ist := 0x4;
 				}
 				ist==0x4 : par{
 					pch := 0xFF;
-					any{
+					if(fe) any{
+						NMI_do : pcl := 0xFA;
+						IRQ_do : pcl := 0xFE;
+						COP_do : pcl := 0xF4;
+						BRK_do : pcl := 0xFE;
+					}
+					else any{
 						NMI_do : pcl := 0xEA;
 						IRQ_do : pcl := 0xEE;
 						COP_do : pcl := 0xE4;
@@ -750,15 +762,15 @@ if(read_wait.do & ^read_ack) halt(0x35);
 									alu_bcd.add(0x00||ral, 0x00||wl, fc);
 									ral := alu_bcd.dout<7:0>;
 									fc := alu_bcd.cout8;
+									fv := alu_bcd.v8;
 									nz_flags(0b1, alu_bcd.dout);
-									fv := (^(ral<7>@wl<7>)) & (ral<7>@alu_bcd.dout<7>); // 20171105
 								}
 								else{
 									add.con(0x00||ral, 0x00||wl, fc);
 									ral := add.dout<7:0>;
 									fc := add.dout<8>;
+									fv := ^(ral<7> @ wl<7>) & (ral<7> @ add.dout<7>);
 									nz_flags(0b1, add.dout);
-									fv := (^(ral<7>@wl<7>)) & (ral<7>@add.dout<7>); // 20171105
 								}
 							}
 							else{
@@ -767,52 +779,52 @@ if(read_wait.do & ^read_ack) halt(0x35);
 									ral := alu_bcd.dout<7:0>;
 									rah := alu_bcd.dout<15:8>;
 									fc := alu_bcd.cout16;
+									fv := alu_bcd.v16;
 									nz_flags(0b0, alu_bcd.dout);
-									fv := (^(ra<15>@w<15>)) & (ra<15>@alu_bcd.dout<15>); // 20171105
 								}
 								else{
 									add.con(ra, w, fc);
 									ral := add.dout<7:0>;
 									rah := add.dout<15:8>;
 									fc := add.cout;
+									fv := ^(ra<15> @ w<15>) & (ra<15> @ add.dout<15>);
 									nz_flags(0b0, add.dout);
-									fv := (^(ra<15>@w<15>)) & (ra<15>@add.dout<15>); // 20171105
 								}
 							}
 						}
 						I_SBC : par{
 							if(fe | fm){
 								if(fd){
-									alu_bcd.sub(0x00||ral, 0x00||wl, fc);
+									alu_bcd.sub(0x00||ral, 0x00||^wl, fc);
 									ral := alu_bcd.dout<7:0>;
 									fc := alu_bcd.cout8;
+									fv := alu_bcd.v8;
 									nz_flags(0b1, alu_bcd.dout);
-									fv := (^(ral<7>@wl<7>)) & (ral<7>@alu_bcd.dout<7>);
 								}
 								else{
-									add.con(0x00||ral, 0x00||(^wl), fc);
+									add.con(0x00||ral, 0x00||^wl, fc);
 									ral := add.dout<7:0>;
 									fc := add.dout<8>;
+									fv := ^(ral<7> @ ^wl<7>) & (ral<7> @ add.dout<7>);
 									nz_flags(0b1, add.dout);
-									fv := (^(ral<7>@wl<7>)) & (ral<7>@add.dout<7>); // 20171105
 								}
 							}
 							else{
 								if(fd){
-									alu_bcd.sub(ra, w, fc);
+									alu_bcd.sub(ra, ^w, fc);
 									ral := alu_bcd.dout<7:0>;
 									rah := alu_bcd.dout<15:8>;
 									fc := alu_bcd.cout16;
+									fv := alu_bcd.v16;
 									nz_flags(0b0, alu_bcd.dout);
-									fv := (^(ra<15>@w<15>)) & (ra<15>@alu_bcd.dout<15>); // 20171105
 								}
 								else{
 									add.con(ra, ^w, fc);
 									ral := add.dout<7:0>;
 									rah := add.dout<15:8>;
 									fc := add.cout;
+									fv := ^(ra<15> @ ^w<15>) & (ra<15> @ add.dout<15>);
 									nz_flags(0b0, add.dout);
-									fv := (^(ra<15>@w<15>)) & (ra<15>@add.dout<15>); // 20171105
 								}
 							}
 						}
@@ -1679,7 +1691,8 @@ if(read_wait.do & ^read_ack) halt(0x35);
 				ist==0xA : nexti();
 			}
 
-// ñ¢é¿ëï STP
+			I_STP : ;
+
 			else : halt(0xDB);
 		} // ir any
 

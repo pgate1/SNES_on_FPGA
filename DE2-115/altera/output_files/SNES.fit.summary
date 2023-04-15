@@ -1,16 +1,16 @@
-Fitter Status : Successful - Tue Oct 27 11:08:08 2020
-Quartus II 64-Bit Version : 12.1 Build 243 01/31/2013 SP 1.33 SJ Web Edition
+Fitter Status : Successful - Sat Apr 15 14:57:04 2023
+Quartus II 64-Bit Version : 13.1.4 Build 182 03/12/2014 SJ Web Edition
 Revision Name : SNES
 Top-level Entity Name : SNES_top
 Family : Cyclone IV E
 Device : EP4CE115F29C7
 Timing Models : Final
-Total logic elements : 29,930 / 114,480 ( 26 % )
-    Total combinational functions : 27,598 / 114,480 ( 24 % )
-    Dedicated logic registers : 11,003 / 114,480 ( 10 % )
-Total registers : 11003
+Total logic elements : 30,738 / 114,480 ( 27 % )
+    Total combinational functions : 28,746 / 114,480 ( 25 % )
+    Dedicated logic registers : 11,002 / 114,480 ( 10 % )
+Total registers : 11002
 Total pins : 372 / 529 ( 70 % )
 Total virtual pins : 0
 Total memory bits : 2,207,936 / 3,981,312 ( 55 % )
-Embedded Multiplier 9-bit elements : 87 / 532 ( 16 % )
+Embedded Multiplier 9-bit elements : 90 / 532 ( 17 % )
 Total PLLs : 2 / 4 ( 50 % )

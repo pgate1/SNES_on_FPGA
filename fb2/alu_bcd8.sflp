@@ -1,0 +1,26 @@
+
+%i "alu_bcd4.h"
+
+circuit alu_bcd8
+{
+	input a<8>, b<8>, cin;
+	output dout<8>, cout, v;
+	instrin add(a, b, cin), sub(a, b, cin);
+
+	alu_bcd4 alu_L, alu_H;
+
+	cout  = alu_H.cout;
+	v = alu_H.v;
+
+	dout = alu_H.dout || alu_L.dout;
+
+	instruct add par{
+		alu_L.add(a<3:0>, b<3:0>, cin);
+		alu_H.add(a<7:4>, b<7:4>, alu_L.cout);
+	}
+
+	instruct sub par{
+		alu_L.sub(a<3:0>, b<3:0>, cin);
+		alu_H.sub(a<7:4>, b<7:4>, alu_L.cout);
+	}
+}

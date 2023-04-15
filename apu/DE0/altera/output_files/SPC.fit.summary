@@ -1,14 +1,14 @@
-Fitter Status : Successful - Sat Aug 10 21:24:33 2019
-Quartus II 64-Bit Version : 12.1 Build 243 01/31/2013 SP 1.33 SJ Web Edition
+Fitter Status : Successful - Sat Apr 15 15:11:25 2023
+Quartus II 64-Bit Version : 13.1.4 Build 182 03/12/2014 SJ Web Edition
 Revision Name : SPC
 Top-level Entity Name : SPC_top
 Family : Cyclone III
 Device : EP3C16F484C6
 Timing Models : Final
-Total logic elements : 13,173 / 15,408 ( 85 % )
-    Total combinational functions : 12,616 / 15,408 ( 82 % )
-    Dedicated logic registers : 4,610 / 15,408 ( 30 % )
-Total registers : 4610
+Total logic elements : 13,203 / 15,408 ( 86 % )
+    Total combinational functions : 12,619 / 15,408 ( 82 % )
+    Dedicated logic registers : 4,634 / 15,408 ( 30 % )
+Total registers : 4634
 Total pins : 251 / 347 ( 72 % )
 Total virtual pins : 0
 Total memory bits : 16,896 / 516,096 ( 3 % )

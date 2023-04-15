@@ -1,6 +1,5 @@
 
-// ALU 8 bit
-// 2008/10/22
+// ALU 8 bit for SPC700
 
 circuit alu2
 {

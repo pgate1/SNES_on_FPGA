@@ -188,7 +188,7 @@ circuit core
 	apu.D_in = sdram.rdata<7:0>;
 
 	instruct apu.write_mem_req par{
-		sdram.write(0b000000||apu.A, 0x00||apu.D_out);
+		sdram.write(0b000000||apu.A, 0x00||apu.D_out, 0b01);
 	}
 
 #ifdef SDCARD
@@ -284,7 +284,7 @@ circuit core
 			// 0x00F0 - 0x00FF
 			if(pA<15:4>==0x00F) apu.set_play(0xF || pA<3:0>, fat.fdata);
 			// 0x0000 - 0xFFFF
-			sdram.write(0b000000||pA, 0x00||fat.fdata);
+			sdram.write(0b000000||pA, 0x00||fat.fdata, 0b01);
 			pA++;
 			if(/&pA) goto st_dspw;
 		}
@@ -334,7 +334,7 @@ circuit core
 			// 0x00F0 - 0x00FF
 			if(pA<15:4>==0x00F) apu.set_play(0xF || pA<3:0>, vjtag.recv_data);
 			// 0x0000 - 0xFFFF
-			sdram.write(0b000000||pA, 0x00||vjtag.recv_data);
+			sdram.write(0b000000||pA, 0x00||vjtag.recv_data, 0b01);
 			pA++;
 			if(/&pA) goto st_dspw;
 		}

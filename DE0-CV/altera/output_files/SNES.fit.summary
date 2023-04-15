@@ -1,19 +1,19 @@
-Fitter Status : Successful - Tue Oct 27 12:09:17 2020
-Quartus II 64-Bit Version : 12.1 Build 243 01/31/2013 SP 1.33 SJ Web Edition
+Fitter Status : Successful - Sat Apr 15 14:38:57 2023
+Quartus II 64-Bit Version : 13.1.4 Build 182 03/12/2014 SJ Web Edition
 Revision Name : SNES
 Top-level Entity Name : SNES_top
 Family : Cyclone V
 Device : 5CEBA4F23C7
-Timing Models : Preliminary
-Logic utilization (in ALMs) : 13,116 / 18,480 ( 71 % )
-Total registers : 10382
+Timing Models : Final
+Logic utilization (in ALMs) : 12,607 / 18,480 ( 68 % )
+Total registers : 10921
 Total pins : 206 / 224 ( 92 % )
 Total virtual pins : 0
 Total block memory bits : 2,192,128 / 3,153,920 ( 70 % )
-Total DSP Blocks : 41 / 66 ( 62 % )
+Total DSP Blocks : 44 / 66 ( 67 % )
 Total HSSI RX PCSs : 0
 Total HSSI PMA RX Deserializers : 0
 Total HSSI TX PCSs : 0
-Total HSSI PMA TX Serializers : 0
+Total HSSI TX Channels : 0
 Total PLLs : 1 / 4 ( 25 % )
 Total DLLs : 0 / 4 ( 0 % )

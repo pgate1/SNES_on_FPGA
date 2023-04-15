@@ -97,3 +97,4 @@
 %d I_WAI (ir==0xCB)
 
 %d I_WDM (ir==0x42)
+%d I_STP (ir==0xDB)

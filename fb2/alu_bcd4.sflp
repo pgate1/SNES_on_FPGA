@@ -1,0 +1,32 @@
+
+circuit alu_bcd4
+{
+	input a<4>, b<4>, cin;
+	output dout<4>, cout, v;
+	instrin add(a, b, cin), sub(a, b, cin);
+
+	sel s0<5>, s1<6>, c;
+
+	instruct add par{
+		s0 = (0b0 || a) + (0b0 || b) + (0b0000 || cin);
+		if(s0<4> | (s0<3> & /|s0<2:1>)){ // s > 0x09
+			s1 = (0b0 || s0) + 0b00110; // + 6
+		}
+		else s1 = 0b0 || s0;
+		c = s1<5> | s1<4>;
+	}
+
+	instruct sub par{
+		s0 = (0b0 || a) + (0b0 || b) + (0b0000 || cin);
+		if(s0<4>==0b0){ // s <= 0x0F
+			s1 = (0b0 || s0) - 0b00110; // - 6
+		}
+		else s1 = 0b0 || s0;
+		c = ^s1<5> & s1<4>;
+	}
+
+	dout = s1<3:0>;
+	cout = c;
+	v = ^(a<3> @ b<3>) & (a<3> @ s0<3>);
+
+}

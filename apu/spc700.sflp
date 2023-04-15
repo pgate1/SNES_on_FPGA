@@ -643,24 +643,24 @@ output dbg<8>;
 							nz_flags(alu.dout);
 						}
 						I_ASL_A : par{
-							fc := ra<7>;
-							ra := ra<6:0> || 0b0;
-							nz_flags(ra<6:0> || 0b0);
+							ra := alu.asl1(ra).dout;
+							fc := alu.cout;
+							nz_flags(alu.dout);
 						}
 						I_LSR_A : par{
-							fc := ra<0>;
-							ra := 0b0 || ra<7:1>;
-							nz_flags(0b0 || ra<7:1>);
+							ra := alu.lsr1(ra).dout;
+							fc := alu.cout;
+							nz_flags(alu.dout);
 						}
 						I_ROL_A : par{
-							fc := ra<7>;
-							ra := ra<6:0> || fc;
-							nz_flags(ra<6:0> || fc);
+							ra := alu.rol1(ra, fc).dout;
+							fc := alu.cout;
+							nz_flags(alu.dout);
 						}
 						I_ROR_A : par{
-							fc := ra<0>;
-							ra := fc || ra<7:1>;
-							nz_flags(fc || ra<7:1>);
+							ra := alu.ror1(ra, fc).dout;
+							fc := alu.cout;
+							nz_flags(alu.dout);
 						}
 					}
 					nexti();
@@ -731,24 +731,24 @@ output dbg<8>;
 							nz_flags(alu.dout);
 						}
 						I_ASL_M : par{
-							fc := data<7>;
-							write(adrs, data<6:0>||0b0);
-							nz_flags(data<6:0>||0b0);
+							fc := alu.asl1(data).cout;
+							write(adrs, alu.dout);
+							nz_flags(alu.dout);
 						}
 						I_LSR_M : par{
-							fc := data<0>;
-							write(adrs, 0b0||data<7:1>);
-							nz_flags(0b0||data<7:1>);
+							fc := alu.lsr1(data).cout;
+							write(adrs, alu.dout);
+							nz_flags(alu.dout);
 						}
 						I_ROL_M : par{
-							fc := data<7>;
-							write(adrs, data<6:0>||fc);
-							nz_flags(data<6:0>||fc);
+							fc := alu.rol1(data, fc).cout;
+							write(adrs, alu.dout);
+							nz_flags(alu.dout);
 						}
 						I_ROR_M : par{
-							fc := data<0>;
-							write(adrs, fc||data<7:1>);
-							nz_flags(fc||data<7:1>);
+							fc := alu.ror1(data, fc).cout;
+							write(adrs, alu.dout);
+							nz_flags(alu.dout);
 						}
 						I_SET1 : par{
 							btest_bs.con(0x0001, 0b0||ir<7:5>);
