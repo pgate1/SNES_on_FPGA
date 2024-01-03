@@ -1,0 +1,25 @@
+
+// Delta Sigma Converter
+
+circuit dsdac16
+{
+	input din<16>;
+	instrin zi_off;
+	output dout;
+
+	reg_wr sigma<18>; // +2
+	sel delta<18>; // +2
+
+	reg_wr sw, din_reg<16>;
+
+	if(zi_off) din_reg := din; // ƒ[ƒ‘}“üOFF
+	else{
+		sw := ^sw;
+		if(sw) din_reg := 0; // ‰¹—Ê‚ª”¼•ª‚É‚È‚é‚ªƒmƒCƒY‚ÍŒ¸‚Á‚Ä‚»‚¤
+		else din_reg := din;
+	}
+
+	delta = sigma<17> || sigma<17> || din_reg;
+	sigma += delta;
+	dout = sigma<17>;
+}

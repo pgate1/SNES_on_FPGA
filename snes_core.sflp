@@ -19,9 +19,10 @@ circuit snes_core
 	reg_ws CSn_reg, RDn_reg, WEn_reg;
 
 	// 外部WRAM I/F
-	output WRAM_ADDR<20>, WRAM_Din<8>;
-	input WRAM_Dout<8>, WRAM_ACK;
+	output WRAM_ADDR<17>, WRAM_Din<8>;
+	input WRAM_Dout<8>;
 	instrout WRAM_RD(WRAM_ADDR), WRAM_WE(WRAM_ADDR, WRAM_Din);
+	instrin WRAM_ACK;
 
 	// 外部VRAM I/F
 	output vramA_adrs<15>, vramA_din<8>;
@@ -37,7 +38,7 @@ circuit snes_core
 	instrin hsync;
 	instrin mpu_run, ppu_run;
 
-	input for_DE1;
+	instrin sw_dma_serial;
 	input pad1P<12>, pad2P<12>;
 	input speed, stop;
 	reg_wr f_speed;
@@ -85,6 +86,8 @@ circuit snes_core
 	output cpu_speed<2>;
 	reg_wr dram_refresh_count<3>;
 	reg_wr mpu_mem_acc; // 1:外部アクセス、0:内部演算
+	instrout dram_refresh_go;
+	output f_overscan; // 0:224 1:240
 
 	reg_wr f_delay_NMI, nmi_delay_count<3>;
 
@@ -208,10 +211,16 @@ reg_wr dbg_reg;
 		}
 	}
 */
-	dma.for_DE1 = for_DE1;
+	reg_wr WRAM_ADDR_reg<17>, WRAM_Din_reg<8>;
+	if(WRAM_RD | WRAM_WE) WRAM_ADDR_reg := WRAM_ADDR;
+	else WRAM_ADDR = WRAM_ADDR_reg;
+	if(WRAM_WE) WRAM_Din_reg := WRAM_Din;
+	else WRAM_Din = WRAM_Din_reg;
+
+	instruct sw_dma_serial dma.sw_dma_serial();
 
 	alt{
-		for_DE1 & dma.run_wdma : par{ // 最速
+		sw_dma_serial & dma.run_wdma : par{ // 最速
 			cpu_speed = 3; // for アウターワールド
 		}
 		/|dram_refresh_count | dma.running : par{ // 約2.6MHz 8cyc
@@ -247,6 +256,7 @@ reg_wr dbg_reg;
 	ppu1.vblank = ppu2.vblank_out;
 	ppu1.hblank = ppu2.hblank_out;
 	ppu2.f_overscan = ppu1.f_overscan;
+	f_overscan = ppu1.f_overscan;
 	ppu1.f_latched_count_en = ppu2.latched_count_en;
 	ppu1.open_bus = open_bus;
 	ppu2.open_bus = open_bus;
@@ -298,9 +308,14 @@ reg_wr dbg_reg;
 	instruct mpu_run par{
 		alt{
 			/|f_halts : ;
-			/|dram_refresh_count : dram_refresh_count--;
+			/|dram_refresh_count : par{
+				// 4096回for64msのために２回
+				if(dram_refresh_count==1) dram_refresh_go();
+				if(dram_refresh_count==3) dram_refresh_go();
+				dram_refresh_count--;
+			}
 			dma.running : dma.run();
-			mpu.WaitforInterrupt : ;
+		//	mpu.WaitforInterrupt : ;
 			else : par{
 				mpu.run();
 				if(nmi_delay_count!=0) nmi_delay_count--;
@@ -431,7 +446,7 @@ reg_wr dbg_reg;
 				map_wram : par{
 					// 0b000||adrs<17>
 					// bank $7Fの場合 bank_reg<6>&bank_reg<0>=1 となる
-					WRAM_RD(0b000 || (bank_reg<6>&bank_reg<0>) || adrs_reg);
+					WRAM_RD((bank_reg<6>&bank_reg<0>) || adrs_reg);
 					generate read_wram_wait.do();
 				}
 				map_ppu1: par{
@@ -473,7 +488,7 @@ reg_wr dbg_reg;
 				map_cowram : any{
 					adrs_reg<1:0>==0b00 : par{
 						cowram_access();
-						/*if(^(dma.running & ^dma.ppu_to_mem))*/ WRAM_RD(0b000 || cow_adrs);
+						/*if(^(dma.running & ^dma.ppu_to_mem))*/ WRAM_RD(cow_adrs);
 						generate read_wram_wait.do();
 					}
 					else : generate read_io_wait.do();
@@ -497,7 +512,7 @@ reg_wr dbg_reg;
 			any{
 				map_wram : par{
 					// Low RAM 8KB <13> size $2000
-					WRAM_WE(0b000 || (bank_reg<6>&bank_reg<0>) || adrs_reg, dout_reg);
+					WRAM_WE((bank_reg<6>&bank_reg<0>) || adrs_reg, dout_reg);
 				}
 				map_ppu1 : par{
 					ppu1.write_io(adrs_reg<5:0>, dout_reg);
@@ -523,7 +538,7 @@ reg_wr dbg_reg;
 				map_cowram : any{
 					adrs_reg<1:0>==0b00 : par{
 						cowram_access();
-						WRAM_WE(0b000 || cow_adrs, dout_reg);
+						WRAM_WE(cow_adrs, dout_reg);
 					}
 					adrs_reg<1:0>==0b01 : cow_adrsL := dout_reg;
 					adrs_reg<1:0>==0b10 : cow_adrsH := dout_reg;
@@ -569,7 +584,7 @@ reg_wr dbg_reg;
 			}
 			dma_adrs_reg<7:2>==0b1000_00 : par{ // 0x2180-2183 1000_00--
 				cowram_access();
-				WRAM_WE(0b000 || cow_adrs, dma_dout_reg);
+				WRAM_WE(cow_adrs, dma_dout_reg);
 			}
 		//	else : ; // e.g. 0x21FF
 		}

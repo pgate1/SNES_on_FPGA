@@ -66,6 +66,8 @@ circuit ch_dsp
 instrin sw_brrmul_off;
 mul_s16s8 brr_mul0, brr_mul1;
 
+	instrin sw_dsp_omit;
+
 	reg_wr f_key;
 	reg_wr r_ADSR1<8>, r_ADSR2<8>, r_GAIN<8>;
 
@@ -172,13 +174,13 @@ output dbg<8>;
 		case 0x5: io_dout = r_ADSR1; // これがないとエナジーブレイカーで
 		case 0x6: io_dout = r_ADSR2; // ちゃんと音が出ない
 		case 0x7: io_dout = r_GAIN; // XMSNESで生成したものなど
-		case 0x8: io_dout = 0b0 || env.eout;
-		case 0x9: io_dout = decenv_reg<15:8>;
+		case 0x8: if(^sw_dsp_omit) io_dout = 0b0 || env.eout; else io_dout = 0x00;
+		case 0x9: if(^sw_dsp_omit) io_dout = decenv_reg<15:8>; else io_dout = 0x00;
 	}
 
 	instruct endx_clear f_endx := 0b0;
 
-	instruct key_on par{
+	instruct key_on if(^sw_dsp_omit){
 		f_key := 0b1;
 		f_loop := 0b0;
 		src_empty := 0b1;
@@ -193,7 +195,7 @@ output dbg<8>;
 		pitch_count := 0;
 	}
 
-	instruct key_off par{
+	instruct key_off if(^sw_dsp_omit){
 		env.key_off();
 		// エンベロープが0になるまで待つことでリリースクリック音を防止
 		generate wait_key_off.do();

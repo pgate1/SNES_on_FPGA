@@ -1,0 +1,29 @@
+/*
+ 24.975MHzから約10.738635MHzを生成する
+ カウンタ 20bit、加算値 212852、最大値 495033、誤差 0.0000909027
+*/
+
+%d COUNT_WIDTH 20
+
+circuit DDS_24975to10738635
+{
+	instrout run;
+
+	sel add<COUNT_WIDTH>;
+	sel max<COUNT_WIDTH>;
+	reg_wr count<COUNT_WIDTH>;
+	sel sa<COUNT_WIDTH>;
+
+	add = 212852;
+	max = 495033;
+
+	sa = count - max;
+
+	if(sa<COUNT_WIDTH-1>){ // count < max
+		count += add;
+	}
+	else{
+		count := sa + add;
+		run();
+	}
+}

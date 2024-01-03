@@ -22,7 +22,8 @@ circuit dsp_core
 
 	input mute<8>;
 	instrin sw_echo_off, sw_intpl_off;
-instrin sw_brrmul_off;
+	instrin sw_brrmul_off;
+	instrin sw_dsp_omit;
 
 	output disp_note<8>, disp_vold<8>;
 	output disp_freq_0<7>, disp_freq_1<7>, disp_freq_2<7>, disp_freq_3<7>;
@@ -253,9 +254,13 @@ dbg = ch_6.dbg;
 
 	echo.eDin = vD;
 
-instruct sw_brrmul_off par(i=0;i<8;i++){
-	ch[i].sw_brrmul_off();
-}
+	instruct sw_brrmul_off par(i=0;i<8;i++){
+		ch[i].sw_brrmul_off();
+	}
+
+	instruct sw_dsp_omit par(i=0;i<8;i++){
+		ch[i].sw_dsp_omit();
+	}
 
 	par(i=0;i<8;i++){
 		ch[i].DIR = r_DIR;

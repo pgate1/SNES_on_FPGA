@@ -1,7 +1,11 @@
 
 %i "typecheck.h"
 
+//#define Enable_CX4
+
+#ifdef Enable_CX4
 %i "Cx4/Cx4_core.h"
+#endif
 
 circuit cartridge
 {
@@ -24,14 +28,17 @@ circuit cartridge
 	output bank_type<4>;
 	instrself lowrom_bank_mirror;
 
+	instrin sw_CX4_enable;
 	instrself f_cx4;
+#ifdef Enable_CX4
 	Cx4_core cx4;
+#endif
 
 	instrin read;
 	instrout read_rom, read_sram;
 	output rom_adrs<23>; // 8BM対応
 	input read_rom_data<8>, read_sram_data<8>;
-	input read_ack;
+	instrin read_ack;
 	output ack;
 
 	output save_ram_size<4>;
@@ -48,9 +55,12 @@ output dbg<8>;
 		reset := 0b0;
 	}
 
+#ifdef Enable_CX4
 	halt_code = cx4.halt_code;
-
 dbg = cx4.dbg;
+#else
+	halt_code = 0x00;
+#endif
 
 	instruct init par{
 		romtype_L.init();
@@ -113,12 +123,15 @@ dbg = cx4.dbg;
 		f_rom_type_8MB := 0b1;
 	}
 
-	// Cx4
-	if(rom_type==0xF3) f_cx4();
+#ifdef Enable_CX4
+	if(sw_CX4_enable & (rom_type==0xF3)) f_cx4();
+#endif
 
 	any{
 		f_cx4 : par{
+#ifdef Enable_CX4
 			rom_adrs = cx4.rom_adrs;
+#endif
 		}
 		else : any{
 			(bank_type==0) | (bank_type==2) | (bank_type==3) : par{
@@ -139,9 +152,11 @@ dbg = cx4.dbg;
 		}
 	}
 
+#ifdef Enable_CX4
 	cx4.BA = BA;
 	cx4.A = A;
 	cx4.Din = Din;
+#endif
 
 	switch(save_ram_size){
 	case 0: save_ram_mask = 0b000000000000000000; // no save ram
@@ -170,31 +185,38 @@ dbg = cx4.dbg;
 
 	instruct read par{
 		if(map_sram){
-			if(save_ram_size!=0){
-				read_sram();
-			}
+			read_sram();
 		}
 		else{
+#ifdef Enable_CX4
 			if(f_cx4 & (cx4.halt_code==0)) cx4.read();
 			else read_rom();
+#else
+			read_rom();
+#endif
 		}
 	}
 
+#ifdef Enable_CX4
 	instruct cx4.rom_read_req par{
 		read_rom();
 	}
 
 	cx4.rom_data = read_rom_data;
 	cx4.rom_ack = read_ack;
+#endif
 
 	if(map_sram){
-		Dout = read_sram_data;
+		if(save_ram_size!=0) Dout = read_sram_data;
+		else Dout = 0xFF; // test
 		ack = read_ack;
 	}
 	else{
 		if(f_cx4){
+#ifdef Enable_CX4
 			Dout = cx4.Dout;
 			ack = cx4.ack;
+#endif
 		}
 		else{
 			Dout = read_rom_data;
@@ -209,7 +231,9 @@ dbg = cx4.dbg;
 			}
 		}
 		else{
+#ifdef Enable_CX4
 			if(f_cx4 & (cx4.halt_code==0)) cx4.write();
+#endif
 		}
 	//	通常ROMへのwrite禁止
 	}

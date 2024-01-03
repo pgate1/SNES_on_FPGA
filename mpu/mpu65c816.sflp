@@ -113,7 +113,7 @@ circuit mpu65c816
 
 	reg_wr f_NMI, NMI_do, IRQ_do;
 	sel f_IRQ, COP_do, BRK_do;
-	output WaitforInterrupt;
+//	output WaitforInterrupt;
 
 	stage_name interrupt { task do(); }
 	stage_name execute { task do(); }

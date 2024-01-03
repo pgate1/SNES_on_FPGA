@@ -27,7 +27,7 @@ circuit dma_core
 
 	reg_wr ch<3>, conf<4>, set_D<8>;
 
-	input for_DE1;
+	instrin sw_dma_serial;
 	instrin run;
 
 	instrout read_req;
@@ -246,6 +246,24 @@ if(h_running_reg & ^fi_h_nextadrs) h_end_all();
 				generate h_store.do();
 			}
 			fi_h_nextadrs : generate h_nextadrs.do();
+			sw_dma_serial : alt{
+				(v_run_ch_0 & adrs_PPU_0<7>) : generate v_wdma.do();
+				v_run_ch_0 : par{ generate v_fetch.do(); generate v_store.do(); }
+				(v_run_ch_1 & adrs_PPU_1<7>) : generate v_wdma.do();
+				v_run_ch_1 : par{ generate v_fetch.do(); generate v_store.do(); }
+				(v_run_ch_2 & adrs_PPU_2<7>) : generate v_wdma.do();
+				v_run_ch_2 : par{ generate v_fetch.do(); generate v_store.do(); }
+				(v_run_ch_3 & adrs_PPU_3<7>) : generate v_wdma.do();
+				v_run_ch_3 : par{ generate v_fetch.do(); generate v_store.do(); }
+				(v_run_ch_4 & adrs_PPU_4<7>) : generate v_wdma.do();
+				v_run_ch_4 : par{ generate v_fetch.do(); generate v_store.do(); }
+				(v_run_ch_5 & adrs_PPU_5<7>) : generate v_wdma.do();
+				v_run_ch_5 : par{ generate v_fetch.do(); generate v_store.do(); }
+				(v_run_ch_6 & adrs_PPU_6<7>) : generate v_wdma.do();
+				v_run_ch_6 : par{ generate v_fetch.do(); generate v_store.do(); }
+				(v_run_ch_7 & adrs_PPU_7<7>) : generate v_wdma.do();
+				v_run_ch_7 : par{ generate v_fetch.do(); generate v_store.do(); }
+			}
 			else : par{
 				if(v_running){
 					generate v_fetch.do();

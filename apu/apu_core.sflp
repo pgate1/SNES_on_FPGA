@@ -23,7 +23,8 @@ circuit apu_core
 	instrin soft_reset, ready;
 	input mute<8>;
 	instrin sw_echo_off;
-instrin sw_brrmul_off;
+	instrin sw_brrmul_off;
+	instrin sw_dsp_omit;
 
 	output sound_L<17>, sound_R<17>;
 
@@ -123,7 +124,8 @@ output dbg<8>;
 	A = adrs_reg;
 	D_out = dout_reg;
 
-instruct sw_brrmul_off dsp.sw_brrmul_off();
+	instruct sw_brrmul_off dsp.sw_brrmul_off();
+	instruct sw_dsp_omit dsp.sw_dsp_omit();
 
 	sound_L = dsp.out_L;
 	sound_R = dsp.out_R;
@@ -213,10 +215,12 @@ instruct sw_brrmul_off dsp.sw_brrmul_off();
 		case 0b11: io_rport = r_port_w3;
 	}
 
+	// SPC700 1.024MHz
 	instruct spc_run if((^ready) & (^soft_reset) & ^/|f_halt){
 		if((^spc.read_req) & (^spc.write_req)) spc.run();
 	}
 
+	// Timer 64kHz
 	instruct timer_run if(^soft_reset){
 		reg_wr timer_timing<3>;
 		if(timer_timing==0b111){
@@ -228,7 +232,7 @@ instruct sw_brrmul_off dsp.sw_brrmul_off();
 	}
 
 	// DSP 128kHz (32kHzÅ~4)
-	instruct dsp_run if(^soft_reset){
+	instruct dsp_run if(^soft_reset & ^sw_dsp_omit){
 		dsp.run();
 	}
 

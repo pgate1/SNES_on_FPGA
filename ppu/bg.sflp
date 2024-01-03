@@ -87,7 +87,7 @@ output dbg<16>;
 	instrself make_col_sub;
 	reg_wr pat_s0<8>, pat_s1<8>, pat_s2<8>, pat_s3<8>;
 
-reg dbg_reg<16>;
+reg_wr dbg_reg<16>;
 
 	stage_name read_wait { task do(); }
 

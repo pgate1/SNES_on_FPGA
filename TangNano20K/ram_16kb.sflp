@@ -1,0 +1,16 @@
+
+circuit ram_16kb
+{
+	input adrs<14>, din<8>;
+	output dout<8>;
+	instrin read(adrs), write(adrs, din);
+
+	mem cells[16384]<8>;
+	reg dout_reg<8>;
+
+	instruct write cells[adrs] := din;
+
+	instruct read dout_reg := cells[adrs];
+	dout = dout_reg;
+
+}
