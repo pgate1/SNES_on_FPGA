@@ -4,8 +4,8 @@
 	Copyright (c) 2023 pgate1
 */
 
-%i "../../../TangNano20K/sdcard_ctrl.h"
-%i "../../../hdl/fat16.h"
+%i "../../../DE0/SDHCcard_ctrl_SDmode.h"
+%i "../../../DE0/FAT32.h"
 
 %i "../snes_core.h"
 //%i "../mem/ram_128kb.h"
@@ -36,12 +36,13 @@ circuit core
 	output sdram_auto_refresh; instrout sdram_refresh_go;
 	input sdram_ack_50; reg_wr sdram_ack;
 //--------------------- SD_Card Interface ------------------
-	sdcard_ctrl sdcard;
-	output SD_CSn; // SD Card CSn
-	output SD_CLK; // SD Card Clock
-	output SD_CMD; // SD Card Command & Dout
-	input  SD_DAT; // SD Card Data
-	fat16 fat;
+	SDHCcard_ctrl_SDmode sdcard;
+	output SD_CLK;    // SD Card Clock
+	output SD_CMD_en; // SD Card CMD Enable
+	output SD_CMD;    // SD Card Command
+	input  SD_RES;    // SD Card Response
+	input  SD_DAT<4>; // SD Card Data
+	FAT32 fat;
 //--------------------- VGA --------------------------------
 	VGA_ctrl vga;
 	Display dis;
@@ -99,9 +100,10 @@ reg_wr err_reg;
 	sdram_auto_refresh = ^rom_read_ok;
 	sdram_ack := sdram_ack_50;
 
-	SD_CSn = sdcard.CSn;
-	SD_CLK = sdcard.CLK;
-	SD_CMD = sdcard.CMD;
+	SD_CLK    = sdcard.CLK;
+	SD_CMD_en = sdcard.CMD_en;
+	SD_CMD    = sdcard.CMD;
+	sdcard.RES = SD_RES;
 	sdcard.DAT = SD_DAT;
 
 	fat.sack = sdcard.ack;
@@ -142,7 +144,7 @@ reg_wr err_reg;
 //	snes.swt = SW<7:0>;
 
 	if(^rom_read_ok){
-		LED = pA<17:13> || 0b0;
+		LED = pA<18:14> || 0b0;
 	}
 	else{
 		LED = snes.pc_out<11:8> || (err_reg | /|snes.halt_code) || rom_read_ok;

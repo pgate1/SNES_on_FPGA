@@ -8,10 +8,9 @@ module SNES_top
     output wire [5:0] led_n,
 
 	// SD card
-    output wire SD_CSn,
-    output wire SD_CLK,
-    output wire SD_CMD,
-    input  wire SD_DAT,
+	output wire SD_CLK,
+	inout  wire SD_CMD,
+	inout  wire [3:0] SD_DAT,
 
     // SDRAM
     output wire O_sdram_clk,
@@ -92,6 +91,7 @@ wire sys_reset_249;
 	);
 
 wire [5:0] led;
+wire sd_cmd_out, sd_cmd_en;
 
 wire sdram_write, sdram_read;
 wire [7:0] sdram_din, sdram_dout;
@@ -106,8 +106,8 @@ wire sdram_Dout_En;
 		.p_reset(sys_reset_249), .m_clock(core_clk),
 		.BTN(button), .LED(led),
 		// SD card
-		.SD_CSn(SD_CSn), .SD_CLK(SD_CLK),
-		.SD_CMD(SD_CMD), .SD_DAT(SD_DAT),
+		.SD_CLK(SD_CLK), .SD_CMD_en(sd_cmd_en), .SD_CMD(sd_cmd_out),
+		.SD_RES(SD_CMD), .SD_DAT(SD_DAT),
 		// SDRAM
 	//	.SDRAM_Din(IO_sdram_dq), .SDRAM_ADDR(O_sdram_addr), .SDRAM_BA(O_sdram_ba), .SDRAM_CSn(O_sdram_cs_n),
 	//	.SDRAM_WEn(O_sdram_wen_n), .SDRAM_RASn(O_sdram_ras_n), .SDRAM_CASn(O_sdram_cas_n), .SDRAM_DEn(sdram_Dout_En),
@@ -121,6 +121,9 @@ wire sdram_Dout_En;
 	);
 
 	assign led_n = ~led;
+
+	// SD mode
+	assign SD_CMD = sd_cmd_en ? sd_cmd_out : 1'bz; // SPI:コマンド出力、SD:コマンド出力とレスポンス入力
 
 	sdram8_ctrl sdram8_ctrl_inst (
 		.p_reset(sys_reset_249),
