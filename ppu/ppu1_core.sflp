@@ -1068,7 +1068,7 @@ output dbg<16>;
 			black = (scanline==0b000000000) | vblank | f_forceblanking | (n_brightness==0x0);
 		}
 		state sst par{
-			vx++;
+
 			if(vx==-1){
 				scanline_latch := scanline;
 				vx_add := 0;
@@ -1109,7 +1109,10 @@ output dbg<16>;
 
 			make_col();
 
-			if(vx<8>) finish;
+			if(vx<8>){
+				vx++;
+				finish;
+			}
 			else goto cout1;
 		}
 		state cout1 par{
@@ -1186,8 +1189,10 @@ output dbg<16>;
 				B = colmath_B.bright(n_brightness, pB).dout;
 			}
 			VIDEO_enable();
-			if(vx<8>) goto est;
+
+			if(vx==255) goto est;
 			else goto sst;
+			vx++;
 			finish;
 		}
 		state est par{

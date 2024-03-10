@@ -1,6 +1,8 @@
 // SNES on FPGA feat. DE0-CV Top Module
 // Copyright (c) 2014 pgate1
 
+`default_nettype none
+
 module SNES_top
 (
 	input wire RESET_N,
@@ -121,3 +123,5 @@ wire sound_L, sound_R;
 	assign GPIO_1[35:20] = 16'b0;
 
 endmodule
+
+`default_nettype wire

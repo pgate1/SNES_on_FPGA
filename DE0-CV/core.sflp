@@ -7,8 +7,8 @@
 %i "../../../DE0-CV/chatmask.h"
 %i "../../../DE0-CV/seg7_ctrl.h"
 %i "../../../DE0-CV/sdram_ctrl.h"
-%i "../../../DE0-CV/sdcard_ctrl_sdmode.h"
-%i "../../../hdl/fat16.h"
+%i "../../../DE0/SDHCcard_ctrl_SDmode.h"
+%i "../../../DE0/FAT32.h"
 %i "../../../DE0-CV/keyboard_ctrl.h"
 %i "../../../DE0-CV/vjtag_uart.h"
 
@@ -46,13 +46,13 @@ circuit core
 	input  SDRAM_Din<16>;
 	output SDRAM_Dout<16>;
 //--------------------- SD_Card Interface ------------------
-	sdcard_ctrl_sdmode sdcard;
+	SDHCcard_ctrl_SDmode sdcard;
 	output SD_CLK;    // SD Card Clock
 	output SD_CMD_en; // SD Card CMD Enable
 	output SD_CMD;    // SD Card Command
 	input  SD_RES;    // SD Card Response
 	input  SD_DAT<4>; // SD Card Data
-	fat16 fat;
+	FAT32 fat;
 //--------------------- PS/2 -------------------------------
 	input PS2_KBCLK, PS2_KBDAT;
 	keyboard_ctrl kb;
@@ -86,13 +86,12 @@ circuit core
 	// APU
 	apu_core apu;
 	ram_64kb apu_wram;
-	reg_ws apu_wram_ack_reg;
 	reg_wr spc_read_ok;
 	DDS_50to1024000 dds_apu;
 
 	cartridge cart;
 
-	mem keys[128];
+	mem keys[256]; // Žg—p‚Í127‚Ü‚Å
 
 	vjtag_uart vjtag;
 	reg_wr f_reading_rom, f_reading_spc;
@@ -113,9 +112,6 @@ circuit core
 	stage_name card2ram_spc { task do(); }
 	stage_name vjtag2ram_spc { task do(); }
 	stage_name mem_clean { task do(); }
-
-	stage_name wram_ack_stg { task do(); }
-	stage_name apu_wram_ack_stg { task do(); }
 
 	if(reset){
 		reset := 0b0;
@@ -175,9 +171,9 @@ circuit core
 	sdcard.RES = SD_RES;
 	sdcard.DAT = SD_DAT;
 
+	instruct fat.sread sdcard.read(fat.sadrs);
 	fat.sack = sdcard.ack;
 	fat.sdata = sdcard.rdata;
-	instruct fat.sread sdcard.read(fat.sadrs);
 /*
 	if(fat.err){
 		halt(0x33);
@@ -283,16 +279,31 @@ circuit core
 	instruct snes.read_rom cart.read();
 	snes.D_in = cart.Dout;
 	snes.ROM_ACK = cart.ack;
+
+	reg_wr read_rom_ack_wait;
+	reg_wr read_sram_ack_wait;
+	reg_wr read_wram_ack_wait;
+	reg_wr read_aram_ack_wait, write_aram_ack_wait;
+
 	instruct cart.read_rom par{
 		sdram.read(0b00||cart.rom_adrs);
+		read_rom_ack_wait := 0b1;
+	}
+	if(read_rom_ack_wait & sdram.ack){
+		read_rom_ack_wait := 0b0;
+		cart.read_ack();
 	}
 	cart.read_rom_data = sdram.rdata<7:0>;
-	cart.read_ack = sdram.ack;
 
 	instruct snes.write_rom cart.write();
 
 	instruct cart.read_sram par{
 		sdram.read(0b1100000||cart.sram_adrs);
+		read_sram_ack_wait := 0b1;
+	}
+	if(read_sram_ack_wait & sdram.ack){
+		read_sram_ack_wait := 0b0;
+		cart.read_ack();
 	}
 	cart.read_sram_data = sdram.rdata<7:0>;
 
@@ -302,14 +313,19 @@ circuit core
 	}
 
 	instruct snes.WRAM_RD par{
-		wram.read(snes.WRAM_ADDR<16:0>);
-		generate wram_ack_stg.do();
+		wram.read(snes.WRAM_ADDR);
+		read_wram_ack_wait := 0b1;
+	}
+	if(read_wram_ack_wait & sdram.ack){
+		read_wram_ack_wait := 0b0;
+		snes.WRAM_ACK();
 	}
 	snes.WRAM_Dout = wram.D_out;
-	snes.WRAM_ACK = wram_ack_stg.do;
+
 	instruct snes.WRAM_WE par{
-		wram.write(snes.WRAM_ADDR<16:0>, snes.WRAM_Din);
+		wram.write(snes.WRAM_ADDR, snes.WRAM_Din);
 	}
+
 /*
 	instruct snes.VRAM_RD par{
 		vram.read(snes.VRAM_ADDR);
@@ -381,16 +397,21 @@ circuit core
 
 	instruct apu.read_mem_req par{
 		apu_wram.read(apu.A);
-		apu_wram_ack_reg := 0b0;
-		generate apu_wram_ack_stg.do();
+		read_aram_ack_wait := 0b1;
+	}
+	if(read_aram_ack_wait | apu.ready){
+		read_aram_ack_wait := 0b0;
+		apu.ack();
 	}
 	apu.D_in = apu_wram.D_out;
-	if(apu_wram_ack_reg | apu.ready) apu.ack();
 
 	instruct apu.write_mem_req par{
 		apu_wram.write(apu.A, apu.D_out);
-		apu_wram_ack_reg := 0b0;
-		generate apu_wram_ack_stg.do();
+		write_aram_ack_wait := 0b1;
+	}
+	if(write_aram_ack_wait | apu.ready){
+		write_aram_ack_wait := 0b0;
+		apu.ack();
 	}
 
 	instruct vga.view dis.read();
@@ -417,6 +438,7 @@ circuit core
 			if(rom_read_ok){
 				if(dds_cpu.run){
 					if(
+					//	((snes.cpu_speed==3) & (mpu_timing==2)) | // 5.36931750MHz
 						((snes.cpu_speed==2) & (mpu_timing==3)) | // 3.57954500MHz
 						((snes.cpu_speed==1) & (mpu_timing==4)) | // 2.68465875MHz
 						((snes.cpu_speed==0) & (mpu_timing==6))   // 1.78977250MHz
@@ -449,16 +471,6 @@ circuit core
 		}
 	}
 
-	stage wram_ack_stg {
-		finish;
-	}
-
-	stage apu_wram_ack_stg {
-		par{
-			apu_wram_ack_reg := 0b1;
-			finish;
-		}
-	}
 /*
 	stage mod_apu_read_stg {
 		par{

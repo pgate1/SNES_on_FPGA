@@ -83,6 +83,20 @@ output dbg<16>;
 
 	sela col_low[34]<4>;
 
+	// 描画されるべきスプライト選択 深さ最小優先版の宣言
+	sela calt_0[34]<6>;
+	sela clen_0[34];
+	sela calt_1[17]<6>;
+	sela clen_1[17];
+	sela calt_2[8]<6>;
+	sela clen_2[8];
+	sela calt_3[4]<6>;
+	sela clen_3[4];
+	sela calt_4[2]<6>;
+	sela clen_4[2];
+	sel calt_5<6>, clen_5;
+	sel calt_6<6>, clen_6;
+
 	stage_name OBJ_SEARCH { task do(); }
 	stage_name OBJ_FETCH { task do(); }
 	stage_name read_wait { task do(rid_reg, flp_h_reg); }
@@ -243,7 +257,58 @@ output dbg<16>;
 			col_low[i] = spr_buf_pat3[i]<7>||spr_buf_pat2[i]<7>||spr_buf_pat1[i]<7>||spr_buf_pat0[i]<7>;
 		}
 
+		// 描画されるべきスプライト選択 深さ最小優先版
+		// 12513LEs 53MHz
+		// ppu1 7029LEs 66MHz
+		par(i=0;i<34;i++){
+			clen_0[i] = (/&spr_buf_x[i]<8:3>) & (/|col_low[i]); calt_0[i] = i;
+		}
+		any{ clen_0_00 : calt_1_00 = calt_0_00; else : calt_1_00 = calt_0_01; } clen_1_00 = clen_0_00 | clen_0_01;
+		any{ clen_0_02 : calt_1_01 = calt_0_02; else : calt_1_01 = calt_0_03; } clen_1_01 = clen_0_02 | clen_0_03;
+		any{ clen_0_04 : calt_1_02 = calt_0_04; else : calt_1_02 = calt_0_05; } clen_1_02 = clen_0_04 | clen_0_05;
+		any{ clen_0_06 : calt_1_03 = calt_0_06; else : calt_1_03 = calt_0_07; } clen_1_03 = clen_0_06 | clen_0_07;
+		any{ clen_0_08 : calt_1_04 = calt_0_08; else : calt_1_04 = calt_0_09; } clen_1_04 = clen_0_08 | clen_0_09;
+		any{ clen_0_0A : calt_1_05 = calt_0_0A; else : calt_1_05 = calt_0_0B; } clen_1_05 = clen_0_0A | clen_0_0B;
+		any{ clen_0_0C : calt_1_06 = calt_0_0C; else : calt_1_06 = calt_0_0D; } clen_1_06 = clen_0_0C | clen_0_0D;
+		any{ clen_0_0E : calt_1_07 = calt_0_0E; else : calt_1_07 = calt_0_0F; } clen_1_07 = clen_0_0E | clen_0_0F;
+		any{ clen_0_10 : calt_1_08 = calt_0_10; else : calt_1_08 = calt_0_11; } clen_1_08 = clen_0_10 | clen_0_11;
+		any{ clen_0_12 : calt_1_09 = calt_0_12; else : calt_1_09 = calt_0_13; } clen_1_09 = clen_0_12 | clen_0_13;
+		any{ clen_0_14 : calt_1_0A = calt_0_14; else : calt_1_0A = calt_0_15; } clen_1_0A = clen_0_14 | clen_0_15;
+		any{ clen_0_16 : calt_1_0B = calt_0_16; else : calt_1_0B = calt_0_17; } clen_1_0B = clen_0_16 | clen_0_17;
+		any{ clen_0_18 : calt_1_0C = calt_0_18; else : calt_1_0C = calt_0_19; } clen_1_0C = clen_0_18 | clen_0_19;
+		any{ clen_0_1A : calt_1_0D = calt_0_1A; else : calt_1_0D = calt_0_1B; } clen_1_0D = clen_0_1A | clen_0_1B;
+		any{ clen_0_1C : calt_1_0E = calt_0_1C; else : calt_1_0E = calt_0_1D; } clen_1_0E = clen_0_1C | clen_0_1D;
+		any{ clen_0_1E : calt_1_0F = calt_0_1E; else : calt_1_0F = calt_0_1F; } clen_1_0F = clen_0_1E | clen_0_1F;
+		any{ clen_1_00 : calt_2_0 = calt_1_00; else : calt_2_0 = calt_1_01; } clen_2_0 = clen_1_00 | clen_1_01;
+		any{ clen_1_02 : calt_2_1 = calt_1_02; else : calt_2_1 = calt_1_03; } clen_2_1 = clen_1_02 | clen_1_03;
+		any{ clen_1_04 : calt_2_2 = calt_1_04; else : calt_2_2 = calt_1_05; } clen_2_2 = clen_1_04 | clen_1_05;
+		any{ clen_1_06 : calt_2_3 = calt_1_06; else : calt_2_3 = calt_1_07; } clen_2_3 = clen_1_06 | clen_1_07;
+		any{ clen_1_08 : calt_2_4 = calt_1_08; else : calt_2_4 = calt_1_09; } clen_2_4 = clen_1_08 | clen_1_09;
+		any{ clen_1_0A : calt_2_5 = calt_1_0A; else : calt_2_5 = calt_1_0B; } clen_2_5 = clen_1_0A | clen_1_0B;
+		any{ clen_1_0C : calt_2_6 = calt_1_0C; else : calt_2_6 = calt_1_0D; } clen_2_6 = clen_1_0C | clen_1_0D;
+		any{ clen_1_0E : calt_2_7 = calt_1_0E; else : calt_2_7 = calt_1_0F; } clen_2_7 = clen_1_0E | clen_1_0F;
+		any{ clen_2_0 : calt_3_0 = calt_2_0; else : calt_3_0 = calt_2_1; } clen_3_0 = clen_2_0 | clen_2_1;
+		any{ clen_2_2 : calt_3_1 = calt_2_2; else : calt_3_1 = calt_2_3; } clen_3_1 = clen_2_2 | clen_2_3;
+		any{ clen_2_4 : calt_3_2 = calt_2_4; else : calt_3_2 = calt_2_5; } clen_3_2 = clen_2_4 | clen_2_5;
+		any{ clen_2_6 : calt_3_3 = calt_2_6; else : calt_3_3 = calt_2_7; } clen_3_3 = clen_2_6 | clen_2_7;
+		any{ clen_3_0 : calt_4_0 = calt_3_0; else : calt_4_0 = calt_3_1; } clen_4_0 = clen_3_0 | clen_3_1;
+		any{ clen_3_2 : calt_4_1 = calt_3_2; else : calt_4_1 = calt_3_3; } clen_4_1 = clen_3_2 | clen_3_3;
+		any{ clen_4_0 : calt_5 = calt_4_0; else : calt_5 = calt_4_1; } clen_5 = clen_4_0 | clen_4_1;
+		any{ clen_0_20 : calt_1_10 = calt_0_20; else : calt_1_10 = calt_0_21; } clen_1_10 = clen_0_20 | clen_0_21;
+		any{ clen_5 : calt_6 = calt_5; else : calt_6 = calt_1_10; } clen_6 = clen_5 | clen_1_10;
+		sel col_high<3>, col_low<4>;
+		any(i=0;i<34;i++){
+			calt_6==i : col_low=col_low[i];
+		}
+		col_pri = spr_buf_pri[calt_6];
+		col_high = spr_buf_pal[calt_6];
+		col_enable = clen_6;
+		col_id = 0b1 || col_high || col_low;
+
+/*
 		// 描画されるべきスプライト選択 簡易記述版
+		// 12602LEs 52MHz
+		// ppu1 7001LEs 57MHz
 		sel calt<6>, col_high<3>, col_low<4>;
 		alt(i=0;i<34;i++){
 			(/&spr_buf_x[i]<8:3>)&(/|col_low[i]) : par{ calt=i; col_low=col_low[i]; }
@@ -253,6 +318,25 @@ output dbg<16>;
 		col_high = spr_buf_pal[calt];
 		col_enable = /|col_low;
 		col_id = 0b1 || col_high || col_low;
+*/
+/*
+		// 描画されるべきスプライト選択 n&-n版
+		// ppu1 7112LEs 58MHz
+		sel en_bits<34>, en_hot<34>;
+		join(i=0;i<34;i++){
+			en_bits = en_bits || ((/&spr_buf_x[i]<8:3>)&(/|col_low[i]));
+		}
+		en_hot = en_bits & -en_bits;
+		sel calt<6>, col_high<3>, col_low<4>;
+		any(i=0;i<34;i++){
+			en_hot<i> : par{ calt=i; col_low=col_low[i]; }
+			else : col_low = 0b0000;
+		}
+		col_pri = spr_buf_pri[calt];
+		col_high = spr_buf_pal[calt];
+		col_enable = /|col_low;
+		col_id = 0b1 || col_high || col_low;
+*/
 	}
 
 	instruct hsync hsync_reg := 0b1;
