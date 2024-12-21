@@ -6,6 +6,7 @@ circuit VGA_ctrl
 	instrout view;
 	output h_sync, v_sync;
 	output win_valid, dis_valid;
+	instrout vsync, hsync, dsync;
 
 	reg_ws reset;
 	reg_wr h_win_valid, h_view_valid;
@@ -27,12 +28,14 @@ circuit VGA_ctrl
 	dis_valid = h_dis_valid  & v_dis_valid;
 
 	instruct run h_timing();
+	instruct run dsync();
 
 	// 25 MHz
 	instruct h_timing par{
 		any{
 			h_count==0 : par{
 				h_sync_reg := 0b0;
+				hsync();
 			}
 			h_count==96 : par{
 				h_sync_reg := 0b1;
@@ -66,6 +69,7 @@ circuit VGA_ctrl
 		any{
 			v_count==0 : par{
 				v_sync_reg := 0b0;
+				vsync();
 			}
 			v_count==2 : par{
 				v_sync_reg := 0b1;

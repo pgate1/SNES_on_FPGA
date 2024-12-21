@@ -18,7 +18,7 @@
 circuit spc700
 {
 	output A<16>, Dout<8>;
-	reg_wr A_reg<16>, Dout_reg<8>;
+	reg A_reg<16>, Dout_reg<8>;
 	input Din<8>;
 	instrin reset_in, run;
 	instrout read_req, write_req;
@@ -36,9 +36,7 @@ output dbg<8>;
 
 	reg_ws reset;
 	instrself reset_act;
-	reg_wr pc<16>;
-	reg_wr ir<8>; // for seconds reset
-	reg_wr ist<3>;
+	reg pc<16>, ir<8>, ist<3>;
 
 	instrself halt;
 	reg_wr halt_reg;
@@ -62,11 +60,11 @@ output dbg<8>;
 //	instrself adrs_dpw;
 	instrself nexti;
 
-	reg_wr ra<8>, rx<8>, ry<8>;
-	reg_ws sp<8>;
-	reg_wr fn, fv, fp, fb, fh, fi, fz, fc;
-	reg_wr btest_flag;
-	reg_wr dwl<8>, dwh<8>;
+	reg ra<8>, rx<8>, ry<8>;
+	reg sp<8>;
+	reg fn, fv, fp, fb, fh, fi, fz, fc;
+	reg btest_flag;
+	reg dwl<8>, dwh<8>;
 
 	alu2 alu;
 	add_16 add16;
@@ -86,7 +84,7 @@ output dbg<8>;
 	sel stack_din<8>;
 	instrself stack_pop;
 
-	reg_wr ah<8>, al<8>;
+	reg ah<8>, al<8>;
 
 	reg rid_reg<3>;
 	sel adrs<16>;
@@ -96,7 +94,7 @@ output dbg<8>;
 	add_8 al_idx;
 	add_16 adrs_idx;
 
-	reg_wr data<8>, data2<8>;
+	reg data<8>, data2<8>;
 
 	instrself read(rid_sel, A_sel), write(A_sel, Dout_sel);
 	sel rid_sel<3>, A_sel<16>, Dout_sel<8>;

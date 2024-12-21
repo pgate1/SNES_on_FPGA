@@ -23,24 +23,24 @@ circuit echo_mod
 	instrin ack;
 
 	instrin ready;
-	reg_wr f_read_en;
+	reg f_read_en;
 
 	instrin sw_echo_off;
 
-	reg_wr eA_reg<16>, rid_reg<2> ,eDout_reg<8>;
+	reg eA_reg<16>, rid_reg<2> ,eDout_reg<8>;
 	reg_wr e_LH<8>, e_LL<8>, e_RH<8>, e_RL<8>;
 
 	instrself read(rid_sel, eA_sel), write(eA_sel, eDout_sel);
 	sel rid_sel<2>, eA_sel<16>, eDout_sel<8>;
 
-	reg_wr index<13>;
+	reg index<13>;
 
 	mul_s16 fb_mul_L, fb_mul_R;
 	mul_s16 vol_mul;
-	reg_wr oflip;
+	reg oflip;
 
-	rega post_buf_L[8]<16>; // 0は使用しない
-	rega post_buf_R[8]<16>;
+	regs post_buf_L[8]<16>; // 0は使用しない
+	regs post_buf_R[8]<16>;
 	reg_wr post_fir_L<16>, post_fir_R<16>;
 
 	stage_name bucket { task do(); }
@@ -199,7 +199,7 @@ circuit echo_mod
 
 	stage FIR_stg {
 		mul_s16 fir_mul_L, fir_mul_R;
-		reg_wr fir_add_L<19>, fir_add_R<19>;
+		reg fir_add_L<19>, fir_add_R<19>;
 		first_state st0;
 		state st0 par{
 			// s16 * s8 -1 = s23 -7 = s16

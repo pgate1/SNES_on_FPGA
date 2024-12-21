@@ -43,16 +43,15 @@ circuit mpu65c816
 	sel h_code<8>;
 	reg_wr h_code_reg<8>;
 
-	reg_wr pch<8>, pcl<8>;
+	reg pch<8>, pcl<8>;
 	sel pc<16>;
 	instrself pc_inc, pc_dec;
 	add_16 pcadd;
-	reg_wr fi_wait_interrupt;
+	reg fi_wait_interrupt;
 
-	reg_wr ir<8>; // for seconds reset
-	reg_wr ist<4>;
+	reg ir<8>, ist<4>;
 	sel rid<4>;
-	reg_wr rid_reg<4>;
+	reg rid_reg<4>;
 	instrself nexti;
 
 	instrself read(rid, BA, A), write(BA, A, D_out);
@@ -62,23 +61,23 @@ circuit mpu65c816
 	sel f_pull;
 	add_16 spadd;
 
-	reg_wr rah<8>, ral<8>;
-	reg_wr rxh<8>, rxl<8>;
-	reg_wr ryh<8>, ryl<8>;
+	reg rah<8>, ral<8>;
+	reg rxh<8>, rxl<8>;
+	reg ryh<8>, ryl<8>;
 	reg rpb<8>, rdb<8>, sph<8>, spl<8>;
-	reg_wr fn, fv, fm, fx, fd, fi, fz, fc, fe;
+	reg fn, fv, fm, fx, fd, fi, fz, fc, fe;
 	sel ra<16>, rx<16>, ry<16>;
 
-	reg_wr dir<16>;
+	reg dir<16>;
 	add_16 diradd;
 
-	reg_wr wh<8>, wl<8>;
+	reg wh<8>, wl<8>;
 	reg ab<8>, ah<8>, al<8>;
 	sel w<16>, adrs<16>;
 	instrself adrs_inc, adrs_dec;
-	reg_wr adrs_wrap;
+	reg adrs_wrap;
 	add_16 adadd;
-	reg_wr ad_c;
+	reg ad_c;
 	add_8 abadd;
 
 	sel nz_8, nz_data<16>;
@@ -86,6 +85,7 @@ circuit mpu65c816
 
 	add_16 add;
 	alu_bcd16 alu_bcd;
+	reg alu_bcd_addsub, alu_bcd_in_a<16>, alu_bcd_in_b<16>, alu_bcd_in_c;
 
 	instrself adrs_imm(h_imm);
 	sel h_imm;
@@ -111,12 +111,13 @@ circuit mpu65c816
 	instrself state_expand(expand_data);
 	sel expand_data<8>;
 
-	reg_wr f_NMI, NMI_do, IRQ_do;
+	reg f_NMI, NMI_do, IRQ_do;
 	sel f_IRQ, COP_do, BRK_do;
 //	output WaitforInterrupt;
 
 	stage_name interrupt { task do(); }
 	stage_name execute { task do(); }
+	stage_name alu_bcd_stg { task do(alu_bcd_addsub, alu_bcd_in_a, alu_bcd_in_b, alu_bcd_in_c); }
 	stage_name read_wait { task do(); }
 
 	if(reset){
@@ -127,11 +128,7 @@ circuit mpu65c816
 		rpb := 0x00;
 		sph := 0x01;
 		spl := 0xFF;
-
-		fm := 0b1;
-		fx := 0b1;
-		fi := 0b1;
-		fd := 0b0;
+		state_expand(0b00110100);
 
 		ist := 0x0;
 		rid_reg := 0x0;
@@ -140,6 +137,7 @@ circuit mpu65c816
 		pch := 0xFF;
 		pcl := 0xFC;
 		ir := 0x4C;	// JMP
+		adrs_wrap := 0b0;
 
 		f_NMI := 0b0;
 		NMI_do := 0b0;
@@ -596,6 +594,11 @@ if(read_wait.do & ^read_ack) halt(0x35);
 		}
 	}
 
+	any{
+		alu_bcd_addsub==0b0 : alu_bcd.add(alu_bcd_in_a, alu_bcd_in_b, alu_bcd_in_c);
+		alu_bcd_addsub==0b1 : alu_bcd.sub(alu_bcd_in_a, alu_bcd_in_b, alu_bcd_in_c);
+	}
+
 	instruct NMI par{ f_NMI := 0b1; }
 
 	instruct nexti par{
@@ -759,11 +762,12 @@ if(read_wait.do & ^read_ack) halt(0x35);
 						I_ADC : par{
 							if(fe | fm){
 								if(fd){
-									alu_bcd.add(0x00||ral, 0x00||wl, fc);
-									ral := alu_bcd.dout<7:0>;
-									fc := alu_bcd.cout8;
-									fv := alu_bcd.v8;
-									nz_flags(0b1, alu_bcd.dout);
+								//	alu_bcd.add(0x00||ral, 0x00||wl, fc);
+								//	ral := alu_bcd.dout<7:0>;
+								//	fc := alu_bcd.cout8;
+								//	fv := alu_bcd.v8;
+								//	nz_flags(0b1, alu_bcd.dout);
+									generate alu_bcd_stg.do(0b0, 0x00||ral, 0x00||wl, fc);
 								}
 								else{
 									add.con(0x00||ral, 0x00||wl, fc);
@@ -775,12 +779,13 @@ if(read_wait.do & ^read_ack) halt(0x35);
 							}
 							else{
 								if(fd){
-									alu_bcd.add(ra, w, fc);
-									ral := alu_bcd.dout<7:0>;
-									rah := alu_bcd.dout<15:8>;
-									fc := alu_bcd.cout16;
-									fv := alu_bcd.v16;
-									nz_flags(0b0, alu_bcd.dout);
+								//	alu_bcd.add(ra, w, fc);
+								//	ral := alu_bcd.dout<7:0>;
+								//	rah := alu_bcd.dout<15:8>;
+								//	fc := alu_bcd.cout16;
+								//	fv := alu_bcd.v16;
+								//	nz_flags(0b0, alu_bcd.dout);
+									generate alu_bcd_stg.do(0b0, ra, w, fc);
 								}
 								else{
 									add.con(ra, w, fc);
@@ -795,11 +800,12 @@ if(read_wait.do & ^read_ack) halt(0x35);
 						I_SBC : par{
 							if(fe | fm){
 								if(fd){
-									alu_bcd.sub(0x00||ral, 0x00||^wl, fc);
-									ral := alu_bcd.dout<7:0>;
-									fc := alu_bcd.cout8;
-									fv := alu_bcd.v8;
-									nz_flags(0b1, alu_bcd.dout);
+								//	alu_bcd.sub(0x00||ral, 0x00||^wl, fc);
+								//	ral := alu_bcd.dout<7:0>;
+								//	fc := alu_bcd.cout8;
+								//	fv := alu_bcd.v8;
+								//	nz_flags(0b1, alu_bcd.dout);
+									generate alu_bcd_stg.do(0b1, 0x00||ral, 0x00||^wl, fc);
 								}
 								else{
 									add.con(0x00||ral, 0x00||^wl, fc);
@@ -811,12 +817,13 @@ if(read_wait.do & ^read_ack) halt(0x35);
 							}
 							else{
 								if(fd){
-									alu_bcd.sub(ra, ^w, fc);
-									ral := alu_bcd.dout<7:0>;
-									rah := alu_bcd.dout<15:8>;
-									fc := alu_bcd.cout16;
-									fv := alu_bcd.v16;
-									nz_flags(0b0, alu_bcd.dout);
+								//	alu_bcd.sub(ra, ^w, fc);
+								//	ral := alu_bcd.dout<7:0>;
+								//	rah := alu_bcd.dout<15:8>;
+								//	fc := alu_bcd.cout16;
+								//	fv := alu_bcd.v16;
+								//	nz_flags(0b0, alu_bcd.dout);
+									generate alu_bcd_stg.do(0b1, ra, ^w, fc);
 								}
 								else{
 									add.con(ra, ^w, fc);
@@ -1698,6 +1705,44 @@ if(read_wait.do & ^read_ack) halt(0x35);
 
 		}
 	} // stage execute
+
+	stage alu_bcd_stg {
+		par{
+			any{
+				I_ADC : par{
+					if(fe | fm){
+						ral := alu_bcd.dout<7:0>;
+						fc := alu_bcd.cout8;
+						fv := alu_bcd.v8;
+						nz_flags(0b1, alu_bcd.dout);
+					}
+					else{
+						ral := alu_bcd.dout<7:0>;
+						rah := alu_bcd.dout<15:8>;
+						fc := alu_bcd.cout16;
+						fv := alu_bcd.v16;
+						nz_flags(0b0, alu_bcd.dout);
+					}
+				}
+				I_SBC : par{
+					if(fe | fm){
+						ral := alu_bcd.dout<7:0>;
+						fc := alu_bcd.cout8;
+						fv := alu_bcd.v8;
+						nz_flags(0b1, alu_bcd.dout);
+					}
+					else{
+						ral := alu_bcd.dout<7:0>;
+						rah := alu_bcd.dout<15:8>;
+						fc := alu_bcd.cout16;
+						fv := alu_bcd.v16;
+						nz_flags(0b0, alu_bcd.dout);
+					}
+				}
+			}
+			finish;
+		}
+	}
 
 	stage read_wait {
 		if(read_ack){

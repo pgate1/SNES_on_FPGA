@@ -10,7 +10,8 @@ circuit div_u16
 	instrin set(a, b);
 
 	instrself run;
-	reg_wr dr<8>, zr<32>, count<4>;
+	reg dr<8>, zr<32>;
+	reg_wr count<4>;
 	reg_ws ack_reg;
 	add_16 add;
 

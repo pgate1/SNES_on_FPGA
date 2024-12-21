@@ -6,22 +6,23 @@
 
 %i "../../../DE0-CV/chatmask.h"
 %i "../../../DE0-CV/seg7_ctrl.h"
-%i "../../../DE0-CV/sdram_ctrl.h"
+%i "../../../DE0-CV/sdram8_ctrl_50.h"
 %i "../../../DE0/SDHCcard_ctrl_SDmode.h"
 %i "../../../DE0/FAT32.h"
 %i "../../../DE0-CV/keyboard_ctrl.h"
 %i "../../../DE0-CV/vjtag_uart.h"
 
 %i "../snes_core.h"
-%i "../mem/ram_128kb.h"
-%i "../display.h"
+%i "../mem/ram_8x128k.h"
+%i "../Display.h"
 %i "VGA_ctrl.h"
-%i "../mem/ram_32kb.h"
+%i "Dithering_5to4.h"
+%i "../mem/ram_8x32k.h"
 //%i "DDS_50to5369318.h"
 %i "DDS_50to10738635.h"
 
 %i "../apu/apu_core.h"
-%i "../mem/ram_64kb.h"
+%i "../mem/ram_8x64k.h"
 %i "DDS_50to1024000.h"
 %i "dsdac16.h"
 
@@ -31,20 +32,20 @@ circuit core
 {
 	input KEY<4>, SW<10>;
 	chatmask kcmask_0, kcmask_1, kcmask_2, kcmask_3;
-	sela btn[4];
+	sels btn[4];
 	output LEDR<10>;
 	seg7_ctrl seg7_0, seg7_1, seg7_2, seg7_3, seg7_4, seg7_5;
 	output HEX0<7>, HEX1<7>, HEX2<7>, HEX3<7>, HEX4<7>, HEX5<7>;
 	sel seg<24>;
 //--------------------- SDRAM Interface --------------------
 // 参考 bank<2> adrs<23> data<16>
-	sdram_ctrl sdram;
+	sdram8_ctrl_50 sdram;
 	output SDRAM_CSn, SDRAM_WEn, SDRAM_DEn;
 	output SDRAM_RASn, SDRAM_CASn;
 	output SDRAM_BA<2>, SDRAM_ADDR<13>;
 	output SDRAM_LDQM, SDRAM_UDQM;
-	input  SDRAM_Din<16>;
-	output SDRAM_Dout<16>;
+	input  SDRAM_Dout<16>;
+	output SDRAM_Din<16>;
 //--------------------- SD_Card Interface ------------------
 	SDHCcard_ctrl_SDmode sdcard;
 	output SD_CLK;    // SD Card Clock
@@ -60,7 +61,9 @@ circuit core
 	VGA_ctrl vga;
 	output VGA_HS, VGA_VS;
 	output VGA_R<4>, VGA_G<4>, VGA_B<4>;
+	reg VGA_R_reg<4>, VGA_G_reg<4>, VGA_B_reg<4>;
 	Display dis;
+	Dithering_5to4 dither_R, dither_G, dither_B;
 //--------------------- SOUND ------------------------------
 	dsdac16 dac_L, dac_R;
 	output Sound_Left, Sound_Right;
@@ -68,15 +71,15 @@ circuit core
 
 	reg_ws reset;
 
-	reg_wr pA<25>;
+	reg pA<26>;
 	reg_wr rom_read_ok;
 
 	// SNES
 	snes_core snes;
-	ram_128kb wram;
+	ram_8x128k wram;
 	DDS_50to10738635 dds_cpu;
 
-	ram_32kb vramA, vramB;
+	ram_8x32k vramA, vramB;
 //	DDS_50to5369318 dds_ppu;
 	instrself dds_ppu_run;
 
@@ -85,7 +88,7 @@ circuit core
 
 	// APU
 	apu_core apu;
-	ram_64kb apu_wram;
+	ram_8x64k apu_wram;
 	reg_wr spc_read_ok;
 	DDS_50to1024000 dds_apu;
 
@@ -101,28 +104,26 @@ circuit core
 	reg_wr h_code_reg<8>;
 
 	stage_name snes_line { task do(); }
-	stage_name mpu_run { task do(); }
 //	stage_name mod_apu_read_stg { task do(); }
 //	stage_name mod_apu_write_stg { task do(); }
-	stage_name clock25M { task do(); }
 //	stage_name sdram_clean { task do(); }
 	stage_name key2btn { task do(); }
 	stage_name card2ram_rom { task do(); }
+	stage_name tas_stg { task do(); }
 	stage_name vjtag2ram_rom { task do(); }
 	stage_name card2ram_spc { task do(); }
 	stage_name vjtag2ram_spc { task do(); }
 	stage_name mem_clean { task do(); }
 
 	if(reset){
-		reset := 0b0;
 		generate card2ram_rom.do();
 	//	generate sdram_clean.do();
-		generate clock25M.do();
 		generate key2btn.do();
+		reset := 0b0;
 	}
 
 	par(i=0;i<4;i++){
-		kcmask[i].bin = ^KEY<i>; btn[i] = kcmask[i].bout;
+		kcmask[i].bin = KEY<i>; btn[i] = kcmask[i].bout;
 	}
 
 	if(spc_read_ok){
@@ -162,8 +163,9 @@ circuit core
 	SDRAM_ADDR = sdram.A;
 	SDRAM_LDQM = sdram.DQM<0>;
 	SDRAM_UDQM = sdram.DQM<1>;
-	SDRAM_Dout = sdram.Dout;
-	sdram.Din = SDRAM_Din;
+	SDRAM_Din = sdram.Din;
+	sdram.Dout = SDRAM_Dout;
+	sdram.auto_refresh = ^rom_read_ok;
 
 	SD_CLK    = sdcard.CLK;
 	SD_CMD_en = sdcard.CMD_en;
@@ -188,31 +190,53 @@ circuit core
 	VGA_VS = vga.v_sync;
 	alt{
 		vga.win_valid : par{
-			VGA_R = dis.r_out<4:1>;
-			VGA_G = dis.g_out<4:1>;
-			VGA_B = dis.b_out<4:1>;
+			VGA_R_reg := dither_R.col_out;
+			VGA_G_reg := dither_G.col_out;
+			VGA_B_reg := dither_B.col_out;
 		}
 		vga.dis_valid : par{
 			// SNES画面外の色（ディスプレイ自動幅調整のため）
-			VGA_R = 0x1;
-			VGA_G = 0x1;
-			VGA_B = 0x1;
+			VGA_R_reg := 0x1;
+			VGA_G_reg := 0x1;
+			VGA_B_reg := 0x1;
 		}
 		else : par{
-			VGA_R = 0x0;
-			VGA_G = 0x0;
-			VGA_B = 0x0;
+			VGA_R_reg := 0x0;
+			VGA_G_reg := 0x0;
+			VGA_B_reg := 0x0;
 		}
 	}
+	VGA_R = VGA_R_reg;
+	VGA_G = VGA_G_reg;
+	VGA_B = VGA_B_reg;
 
-	if(rom_read_ok) generate mpu_run.do();
+	dither_R.col_in = dis.r_out;
+	dither_G.col_in = dis.g_out;
+	dither_B.col_in = dis.b_out;
+	instruct vga.vsync par{
+		dither_R.vsync();
+		dither_G.vsync();
+		dither_B.vsync();
+	}
+	instruct vga.hsync par{
+		dither_R.hsync();
+		dither_G.hsync();
+		dither_B.hsync();
+	}
+	instruct vga.dsync par{
+		dither_R.dsync();
+		dither_G.dsync();
+		dither_B.dsync();
+	}
 
+	reg_wr tas_key<12>;
 	// SNESPAD<12> : BYｾﾚｽﾀ ↑↓←→ AXLR
 	snes.pad1P =
 		(keys[0x22] || keys[0x1B] || keys[0x29] || keys[0x5A] || 
 		 keys[0x75] || keys[0x72] || keys[0x6B] || keys[0x74] || 
 		 keys[0x23] || keys[0x24] || keys[0x2D] || keys[0x2C])
-		| (btn_0||0b0||btn_3||btn_1||0b0000||btn_2||0b000);
+		| (btn_0||0b0||btn_3||btn_1||0b0000||btn_2||0b000)
+		| tas_key;
 	snes.pad2P = /*SW<8>*/0b0 || 0b00000000000; // for RockmanX2 testmode
 
 //	snes.speed = usb.button1<12>;//pad.data_ref<0>;
@@ -224,8 +248,8 @@ circuit core
 //	if(SW<8>) snes.sw_absidx_mem_off();
 
 	any{
-	//	^KEY<3> : LEDG = 0b0 || snes.dbg<0> || 0b000 || snes.ist_out;
-	//	^KEY<1> : LEDG = 0b0 || apu.ir_out;
+	//	KEY<3> : LEDG = 0b0 || snes.dbg<0> || 0b000 || snes.ist_out;
+	//	KEY<1> : LEDG = 0b0 || apu.ir_out;
 			// core / snes_core / mpu / dma / ppu1 / ppu2 / 0b0 / 0b000;
 		/|h_code_reg | /|snes.f_halts | /|cart.halt_code : LEDR = (/|h_code_reg) || snes.f_halts || (/|cart.halt_code) || 0b00;
 		else : LEDR = 
@@ -235,9 +259,9 @@ circuit core
 	}
 
 	any{
-		^KEY<3> : ;//seg = apu.dbg || 0x0000;
-	//	^KEY<2> : seg = apu.halt_code || apu.ir_out || apu.pc_out;
-		^KEY<1> : seg = h_code_reg || snes.halt_code || cart.halt_code;
+		KEY<3> : ;//seg = apu.dbg || 0x0000;
+	//	KEY<2> : seg = apu.halt_code || apu.ir_out || apu.pc_out;
+		KEY<1> : seg = h_code_reg || snes.halt_code || cart.halt_code;
 		else : alt{
 			^rom_read_ok : seg = 0x00 || pA<22:11> || cart.save_ram_size;
 			else : seg = snes.pc_out;
@@ -276,79 +300,77 @@ circuit core
 
 	cart.A = snes.A;
 	cart.BA = snes.BA;
-	instruct snes.read_rom cart.read();
+	instruct snes.rom_read cart.read();
 	snes.D_in = cart.Dout;
 	snes.ROM_ACK = cart.ack;
 
-	reg_wr read_rom_ack_wait;
-	reg_wr read_sram_ack_wait;
-	reg_wr read_wram_ack_wait;
-	reg_wr read_aram_ack_wait, write_aram_ack_wait;
+	reg_wr rom_read_ack_wait;
+	reg_wr sram_read_ack_wait;
+	reg_wr wram_read_ack_wait;
+	reg_wr aram_read_ack_wait, aram_write_ack_wait;
 
-	instruct cart.read_rom par{
-		sdram.read(0b00||cart.rom_adrs);
-		read_rom_ack_wait := 0b1;
+	instruct cart.rom_read par{
+		sdram.read(0b000||cart.rom_adrs);
+		rom_read_ack_wait := 0b1;
 	}
-	if(read_rom_ack_wait & sdram.ack){
-		read_rom_ack_wait := 0b0;
+	if(rom_read_ack_wait & sdram.ack){
+		rom_read_ack_wait := 0b0;
 		cart.read_ack();
 	}
-	cart.read_rom_data = sdram.rdata<7:0>;
+	cart.rom_read_data = sdram.dout;
 
-	instruct snes.write_rom cart.write();
+	instruct snes.rom_write cart.write();
 
-	instruct cart.read_sram par{
-		sdram.read(0b1100000||cart.sram_adrs);
-		read_sram_ack_wait := 0b1;
+	instruct cart.sram_read par{
+		sdram.read(0b11000000||cart.sram_adrs);
+		sram_read_ack_wait := 0b1;
 	}
-	if(read_sram_ack_wait & sdram.ack){
-		read_sram_ack_wait := 0b0;
+	if(sram_read_ack_wait & sdram.ack){
+		sram_read_ack_wait := 0b0;
 		cart.read_ack();
 	}
-	cart.read_sram_data = sdram.rdata<7:0>;
+	cart.sram_read_data = sdram.dout;
 
 	cart.Din = snes.D_out;
-	instruct cart.write_sram par{
-		sdram.write(0b1100000||cart.sram_adrs, 0x00||snes.D_out, 0b01);
+	instruct cart.sram_write par{
+		sdram.write(0b11000000||cart.sram_adrs, snes.D_out);
 	}
 
 	instruct snes.WRAM_RD par{
 		wram.read(snes.WRAM_ADDR);
-		read_wram_ack_wait := 0b1;
+		wram_read_ack_wait := 0b1;
 	}
-	if(read_wram_ack_wait & sdram.ack){
-		read_wram_ack_wait := 0b0;
+	if(wram_read_ack_wait & sdram.ack){
+		wram_read_ack_wait := 0b0;
 		snes.WRAM_ACK();
 	}
-	snes.WRAM_Dout = wram.D_out;
+	snes.WRAM_Dout = wram.dout;
 
 	instruct snes.WRAM_WE par{
 		wram.write(snes.WRAM_ADDR, snes.WRAM_Din);
 	}
 
-/*
-	instruct snes.VRAM_RD par{
-		vram.read(snes.VRAM_ADDR);
-	}
-	snes.VRAM_Dout = vram.D_out;
-	snes.VRAM_ACK = vram.ack;
-	instruct snes.VRAM_WE par{
-		vram.write(snes.VRAM_ADDR, snes.VRAM_Din);
-	}
-*/
+	instruct snes.dram_refresh_go sdram.refresh_go();
+
+	reg_wr vramA_ack;
 	instruct snes.vramA_read par{
 		vramA.read(snes.vramA_adrs);
+		vramA_ack := 0b1;
 	}
 	snes.vramA_dout = vramA.dout;
-	snes.vramA_ack = vramA.ack;
+	snes.vramA_ack = vramA_ack;
+	if(vramA_ack) vramA_ack := 0b0;
 	instruct snes.vramA_write par{
 		vramA.write(snes.vramA_adrs, snes.vramA_din);
 	}
+	reg_wr vramB_ack;
 	instruct snes.vramB_read par{
 		vramB.read(snes.vramB_adrs);
+		vramB_ack := 0b1;
 	}
 	snes.vramB_dout = vramB.dout;
-	snes.vramB_ack = vramB.ack;
+	snes.vramB_ack = vramB_ack;
+	if(vramB_ack) vramB_ack := 0b0;
 	instruct snes.vramB_write par{
 		vramB.write(snes.vramB_adrs, snes.vramB_din);
 	}
@@ -395,24 +417,28 @@ circuit core
 		}
 	}
 
-	instruct apu.read_mem_req par{
+	instruct apu.mem_read_req par{
 		apu_wram.read(apu.A);
-		read_aram_ack_wait := 0b1;
+		aram_read_ack_wait := 0b1;
 	}
-	if(read_aram_ack_wait | apu.ready){
-		read_aram_ack_wait := 0b0;
+	if(aram_read_ack_wait | apu.ready){
+		aram_read_ack_wait := 0b0;
 		apu.ack();
 	}
-	apu.D_in = apu_wram.D_out;
+	apu.D_in = apu_wram.dout;
 
-	instruct apu.write_mem_req par{
+	instruct apu.mem_write_req par{
 		apu_wram.write(apu.A, apu.D_out);
-		write_aram_ack_wait := 0b1;
+		aram_write_ack_wait := 0b1;
 	}
-	if(write_aram_ack_wait | apu.ready){
-		write_aram_ack_wait := 0b0;
+	if(aram_write_ack_wait | apu.ready){
+		aram_write_ack_wait := 0b0;
 		apu.ack();
 	}
+
+	reg_wr clock25M_div;
+	clock25M_div := ^clock25M_div;
+	if(clock25M_div /*& rom_read_ok*/) vga.run();
 
 	instruct vga.view dis.read();
 
@@ -432,30 +458,24 @@ circuit core
 		}
 	}
 
-	stage mpu_run {
-		reg_wr mpu_timing<3>;
-		par{
-			if(rom_read_ok){
-				if(dds_cpu.run){
-					if(
-					//	((snes.cpu_speed==3) & (mpu_timing==2)) | // 5.36931750MHz
-						((snes.cpu_speed==2) & (mpu_timing==3)) | // 3.57954500MHz
-						((snes.cpu_speed==1) & (mpu_timing==4)) | // 2.68465875MHz
-						((snes.cpu_speed==0) & (mpu_timing==6))   // 1.78977250MHz
-					){
-						snes.mpu_run();
-						mpu_timing := 1;
-					}
-					else mpu_timing++;
-				}
-			}
-			else mpu_timing := 1;
-			if(0b0) finish;
+	// クロノOP ちらつかない（HDMAのクロック削減が寄与）
+	reg_wr mpu_timing<3>;
+//if(mpu_timing==7) halt(0x63);
+	if(rom_read_ok & dds_cpu.run){
+		if(
+		//	((snes.cpu_speed==3) & (mpu_timing==2)) | // 5.36931750MHz sw_dma_serial有効時のみ
+			((snes.cpu_speed==2) & (mpu_timing==3)) | // 3.57954500MHz
+			((snes.cpu_speed==1) & (mpu_timing==4)) | // 2.68465875MHz
+			((snes.cpu_speed==0) & (mpu_timing==6))   // 1.78977250MHz
+		){
+			snes.mpu_run();
+			mpu_timing := 1;
 		}
+		else mpu_timing++;
 	}
 
 	stage snes_line {
-		reg_wr pixel_count<9>;
+		reg pixel_count<9> = 1;
 		par{
 			if(dds_ppu_run){
 
@@ -479,14 +499,6 @@ circuit core
 		}
 	}
 */
-	stage clock25M {
-		reg_wr clock25M_div;
-		par{
-			clock25M_div := ^clock25M_div;
-			if(clock25M_div /*& rom_read_ok*/) vga.run();
-			if(0b0) finish;
-		}
-	}
 
 	stage key2btn {
 		reg_ws push;
@@ -512,6 +524,9 @@ circuit core
 			goto st2;
 		}
 		state st2 if(fat.ack){
+			snes.soft_reset();
+			apu.soft_reset();
+			cart.init();
 			fat.read();
 			pA := 0;
 			goto strw;
@@ -523,13 +538,13 @@ circuit core
 				finish;
 			}
 
-			sdram.write(pA, 0x00||fat.fdata, 0b01);
-			if((pA&(0b1||0xFFFFE0))==0b0||0x007FC0) cart.check(0b0, pA<4:0>, fat.fdata);
-			if((pA&(0b1||0xFFFFE0))==0b0||0x00FFC0) cart.check(0b1, pA<4:0>, fat.fdata);
+			sdram.write(pA, fat.fdata);
+			if((pA&(0b11||0xFFFFE0))==0b00||0x007FC0) cart.check(0b0, pA<4:0>, fat.fdata);
+			if((pA&(0b11||0xFFFFE0))==0b00||0x00FFC0) cart.check(0b1, pA<4:0>, fat.fdata);
 			pA++;
 			fat.read();
 
-			if(pA==(0b0||0x7FFFFF)){
+			if(pA==(0b00||0x7FFFFF)){
 				cart.set_rom_type_8MB();
 				goto st8;
 			}
@@ -541,7 +556,7 @@ circuit core
 		}
 		state st5 if(fat.ack){ // Read save data.
 			fat.fopen((0x0||SW<3:0>)+1);
-			pA := 0b1100000000000000000000000;
+			pA := 0b11000000000000000000000000;
 			goto st6;
 		}
 		state st6 if(fat.ack){
@@ -549,10 +564,10 @@ circuit core
 			goto st7;
 		}
 		state st7 if(fat.ack & sdram.ack){
-			sdram.write(pA, 0x00||fat.fdata, 0b01);
+			sdram.write(pA, fat.fdata);
 			pA++;
 			fat.read();
-			if(/&pA<16:0>) goto st8;
+			if(/&pA<17:0>) goto st8;
 		}
 		state st8 par{
 			generate mem_clean.do();
@@ -561,7 +576,7 @@ circuit core
 	}
 
 	stage vjtag2ram_rom {
-		reg_wr rom_size<24>;
+		reg rom_size<24>;
 		first_state st1;
 		finish;
 		state st1 par{
@@ -584,12 +599,12 @@ circuit core
 			goto strw;
 		}
 		state strw if(sdram.ack){
-			sdram.write(pA, 0x00||vjtag.recv_data, 0b01);
-			if((pA&(0b1||0xFFFFE0))==0b0||0x007FC0) cart.check(0b0, pA<4:0>, vjtag.recv_data);
-			if((pA&(0b1||0xFFFFE0))==0b0||0x00FFC0) cart.check(0b1, pA<4:0>, vjtag.recv_data);
+			sdram.write(pA, vjtag.recv_data);
+			if((pA&(0b11||0xFFFFE0))==0b00||0x007FC0) cart.check(0b0, pA<4:0>, vjtag.recv_data);
+			if((pA&(0b11||0xFFFFE0))==0b00||0x00FFC0) cart.check(0b1, pA<4:0>, vjtag.recv_data);
 			pA++;
 
-			if(pA==(0b0||0x7FFFFF)){
+			if(pA==(0b00||0x7FFFFF)){
 				cart.set_rom_type_8MB();
 				goto st3;
 			}
@@ -616,6 +631,7 @@ circuit core
 		}
 		state st3 par{
 			rom_read_ok := 0b1;
+		//	generate tas_stg.do();
 			goto st1;
 			finish;
 		}
@@ -627,6 +643,88 @@ circuit core
 			sdram.write(0b00||cldA, 0x00000000, 0b1111);
 			cldA++;
 			if(/&cldA) finish;
+		}
+	}
+*/
+/*
+	stage tas_stg {
+		reg tas_file_type<3>;
+		mem tas_buf[32];
+		first_state st_open;
+		state st_open if(fat.ack){
+			fat.fopen((0x0||SW<3:0>)+1);
+			goto st_type;
+		}
+		state st_type if(fat.ack){
+			fat.read();
+			if(fat.fdata=='['){ // bk2
+				tas_file_type := 3;
+				goto st_head;
+			}
+			if(fat.fdata=='v'){ // fm2
+				tas_file_type := 4;
+				goto st_head;
+			}
+		}
+		state st_head if(fat.ack){
+			fat.read();
+			if(fat.fdata==0x0A){ // \n
+				reg_wr lf_count<4>;
+				if((tas_file_type==3) & (lf_count== 1)) goto st_input;
+//				if((tas_file_type==3) & (lf_count== 4)) goto st_input;
+				if((tas_file_type==4) & (lf_count==13)) goto st_input;
+				lf_count++;
+			}
+		}
+		state st_input if(fat.ack){
+			reg_wr frame_count<8>, key_start;
+			frame_count++;
+			if(frame_count==0) key_start := 0b1;
+			if(key_start){
+				reg_wr buf_i<5>;
+				tas_buf[buf_i] := fat.fdata!='.';
+				fat.read();
+				if(fat.fdata==0x0A){ // \n
+					buf_i := 0;
+					goto st_key;
+				}
+				else buf_i++;
+			}
+			else goto st_key;
+
+			if(fat.eof) finish; // TAS end
+		}
+		state st_key if(vga.snes_vsync){
+			// SNESPAD<12> : BYｾﾚｽﾀ ↑↓←→ AXLR
+			if(tas_file_type==3){
+				tas_key :=
+					tas_buf[11] || // B
+					tas_buf[10] || // Y
+					tas_buf[ 8] || // Select
+					tas_buf[ 9] || // Start
+					tas_buf[ 4] || // Up
+					tas_buf[ 5] || // Down
+					tas_buf[ 6] || // Left
+					tas_buf[ 7] || // Right
+					tas_buf[13] || // A
+					tas_buf[12] || // X
+					tas_buf[14] || // L
+					tas_buf[15];   // R
+			}
+
+			if(tas_file_type==4){
+				tas_key :=
+					tas_buf[ 3] || // Right
+					tas_buf[ 4] || // Left
+					tas_buf[ 5] || // Down
+					tas_buf[ 6] || // Up
+					tas_buf[ 7] || // Start
+					tas_buf[ 8] || // Select
+					tas_buf[ 9] || // B
+					tas_buf[10];   // A
+			}
+
+			goto st_input;
 		}
 	}
 */

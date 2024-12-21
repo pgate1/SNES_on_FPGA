@@ -9,12 +9,12 @@ circuit apu_core
 	instrin io_write(io_adrs, io_wport), io_read(io_adrs);
 	input io_adrs<2>, io_wport<8>;
 	output io_rport<8>;
-	reg_wr io_rport_reg<8>;
+	reg io_rport_reg<8>;
 
 	instrin spc_run;
 	input D_in<8>;
 	output A<16>, D_out<8>;
-	instrout read_mem_req, write_mem_req;
+	instrout mem_read_req, mem_write_req;
 	instrin ack;
 
 	instrin timer_run, dsp_run;
@@ -47,9 +47,8 @@ output dbg<8>;
 	sel h_code<8>;
 	reg_wr h_code_reg<8>;
 
-	reg_wr adrs_reg<16>;
-	reg dout_reg<8>;
-	reg_wr io_reg<8>;
+	reg adrs_reg<16>, dout_reg<8>;
+	reg io_reg<8>;
 //	reg_wr spc_write_req;
 
 	instrself map_io, map_wmem, map_ipl;
@@ -58,16 +57,16 @@ output dbg<8>;
 
 	reg_wr ctrl_reg<7>;
 	reg_ws f_show_ROM;
-	reg_wr dsp_adrs<8>;
+	reg dsp_adrs<8>;
 	reg_wr r_port_r0<8>, r_port_r1<8>, r_port_r2<8>, r_port_r3<8>;
 	reg_wr r_port_w0<8>, r_port_w1<8>, r_port_w2<8>, r_port_w3<8>;
 	reg_wr reg_F8<8>, reg_F9<8>;
 
 	stage_name spc_read { task do(adrs_reg); }
 	stage_name dsp_read { task do(adrs_reg); }
-	stage_name read_mem_wait { task do(); }
-	stage_name write_mem_wait { task do(); }
-	stage_name read_io_wait { task do(); }
+	stage_name mem_read_wait { task do(); }
+	stage_name mem_write_wait { task do(); }
+	stage_name io_read_wait { task do(); }
 	stage_name spc_write { task do(adrs_reg, dout_reg); }
 	stage_name dsp_write { task do(adrs_reg, dout_reg); }
 
@@ -267,15 +266,15 @@ output dbg<8>;
 						case 0xE : io_reg := 0x0 || timer1.get_count().count;
 						case 0xF : io_reg := 0x0 || timer2.get_count().count;
 					}
-					generate read_io_wait.do();
+					generate io_read_wait.do();
 				}
 				map_ipl : par{
 				//	iplrom.read(); // adrs=0b0||adrs_reg<5:0>);
-					generate read_io_wait.do();
+					generate io_read_wait.do();
 				}
 				map_wmem : par{
-					read_mem_req();
-					generate read_mem_wait.do();
+					mem_read_req();
+					generate mem_read_wait.do();
 				}
 			//	else : halt(0x56);
 			}
@@ -284,20 +283,20 @@ output dbg<8>;
 
 	stage dsp_read {
 		par{
-			read_mem_req();
-			generate read_mem_wait.do();
+			mem_read_req();
+			generate mem_read_wait.do();
 			finish;
 		}
 	}
 
-	stage read_io_wait {
+	stage io_read_wait {
 		par{
 			ack_b();
 			finish;
 		}
 	}
 
-	stage read_mem_wait {
+	stage mem_read_wait {
 		if(ack){
 			ack_b();
 			finish;
@@ -344,26 +343,26 @@ output dbg<8>;
 					case 0xF : ; // none
 				}
 				else : par{ // map_wmem
-					write_mem_req();
+					mem_write_req();
 				}
 			}
 
 			any{
 				map_io : ack_b();
-				else : generate write_mem_wait.do();
+				else : generate mem_write_wait.do();
 			}
 		}
 	}
 
 	stage dsp_write {
 		par{
-			write_mem_req();
-			generate write_mem_wait.do();
+			mem_write_req();
+			generate mem_write_wait.do();
 			finish;
 		}
 	}
 
-	stage write_mem_wait {
+	stage mem_write_wait {
 		if(ack){
 			ack_b();
 			finish;

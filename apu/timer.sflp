@@ -5,9 +5,9 @@ circuit timer
 	output count<4>;
 	instrin set_target(din), run, get_count, clear;
 
-	reg_wr target<8>;
-	reg_wr in_timer<8>;
-	reg_wr counter<4>;
+	reg target<8>;
+	reg in_timer<8>;
+	reg counter<4>;
 
 	stage_name count_up { task do(); }
 

@@ -8,7 +8,7 @@ circuit div_8
 	output q<8>, r<8>, v, ack;
 	instrin dset(a, b), run;
 
-	reg_wr a_reg<17>, b_reg<17>;
+	reg a_reg<17>, b_reg<17>;
 	reg_wr count<4>;
 
 	sel rot_a<17>, xor_a<17>, sub_a<17>;
@@ -43,7 +43,7 @@ circuit div_8
 
 	instruct run par{
 		count++;
-		if(^count<3>) par{
+		if(^count<3>){
 			a_reg := sub_a;
 		}
 	}

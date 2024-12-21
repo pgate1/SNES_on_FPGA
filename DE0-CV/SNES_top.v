@@ -12,7 +12,7 @@ module SNES_top
 	input wire CLOCK3_50, //	50 MHz
 	input wire CLOCK4_50, //	50 MHz
 	////////////////////	Push Button		////////////////////
-	input wire [3:0] KEY, //	Pushbutton[3:0]
+	input wire [3:0] KEY_n, //	Pushbutton[3:0]
 	////////////////////	DPDT Switch		////////////////////
 	input wire [9:0] SW, //	Toggle Switch[9:0]
 	////////////////////	7-SEG Dispaly	////////////////////
@@ -58,8 +58,8 @@ module SNES_top
 
 wire p_reset, g_reset;
 
-wire [15:0] sdram_Dout;
-wire sdram_Dout_En;
+wire [15:0] sdram_Din;
+wire sdram_Din_En;
 
 wire sd_cmd_out, sd_cmd_en;
 
@@ -76,7 +76,7 @@ wire sound_L, sound_R;
 	core CU (
 		.p_reset(g_reset),
 		.m_clock(CLOCK_50),
-		.KEY(KEY), .SW(SW),
+		.KEY(~KEY_n), .SW(SW),
 		.HEX0(HEX0), //	Seven Segment Digit 0
 		.HEX1(HEX1), //	Seven Segment Digit 1
 		.HEX2(HEX2), //	Seven Segment Digit 2
@@ -85,11 +85,11 @@ wire sound_L, sound_R;
 		.HEX5(HEX5), //	Seven Segment Digit 5
 		.LEDR(LEDR),
 //--------------------- SDRAM Interface --------------------
-		.SDRAM_CSn(DRAM_CS_N), .SDRAM_WEn(DRAM_WE_N), .SDRAM_DEn(sdram_Dout_En),
+		.SDRAM_CSn(DRAM_CS_N), .SDRAM_WEn(DRAM_WE_N), .SDRAM_DEn(sdram_Din_En),
 		.SDRAM_RASn(DRAM_RAS_N), .SDRAM_CASn(DRAM_CAS_N),
 		.SDRAM_BA(DRAM_BA), .SDRAM_ADDR(DRAM_ADDR),
 		.SDRAM_LDQM(DRAM_LDQM), .SDRAM_UDQM(DRAM_UDQM),
-		.SDRAM_Din(DRAM_DQ), .SDRAM_Dout(sdram_Dout),
+		.SDRAM_Dout(DRAM_DQ), .SDRAM_Din(sdram_Din),
 //--------------------- SD_Card Interface ------------------
 //		SD_CSn => SD_DAT3, SD_CLK => SD_CLK, -- SPI mode
 //		SD_CMD => SD_CMD,  SD_DAT => SD_DAT0 -- SPI mode
@@ -108,7 +108,7 @@ wire sound_L, sound_R;
 	sdram_pll sdram_pll_inst (
 		.refclk(CLOCK_50), .outclk_0(DRAM_CLK)
 	);
-	assign DRAM_DQ = sdram_Dout_En==1'b0 ? sdram_Dout : 16'hzzzz;
+	assign DRAM_DQ = sdram_Din_En==1'b0 ? sdram_Din : 16'hzzzz;
 
 	// CMD SPI:コマンド出力、SD:コマンド出力とレスポンス入力
 	assign SD_CMD = sd_cmd_en==1'b1 ? sd_cmd_out : 1'bz;

@@ -36,13 +36,13 @@ circuit mode7
 	instrin line_init;
 
 	// tile adrs
-	reg_wr px<22>, py<22>;
+	reg px<22>, py<22>;
 	mul_s16 mulx, muly;
-	reg_wr mx_t<3>, my_t<3>;
-	reg_wr px_t<4>, py_t<4>;
+	reg mx_t<3>, my_t<3>;
+	reg px_t<4>, py_t<4>;
 
-	reg_wr tile_data<8>;
-	reg_wr chr_data<8>;
+	reg tile_data<8>;
+	reg chr_data<8>;
 
 	stage_name line_init_stage { task do(); }
 	stage_name readA_wait { task do(); }
@@ -145,7 +145,7 @@ circuit mode7
 		else vramB_read(chr_adrs);
 	}
 
-	stage line_init_stage{
+	stage line_init_stage {
 		first_state st1;
 		state st1 par{
 			// <s16> * <s14>

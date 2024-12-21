@@ -8,8 +8,8 @@ circuit mul_8
 	output dout<16>, ack;
 	instrin set(a, b), run;
 
-	reg_wr a_reg<8>, b_reg<16>;
-	reg_wr m<16>;
+	reg a_reg<8>, b_reg<16>;
+	reg m<16>;
 	reg_wr count<3>;
 
 	dout = m + (b_reg & (16#a_reg<0>));

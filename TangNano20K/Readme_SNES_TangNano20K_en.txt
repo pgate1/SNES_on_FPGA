@@ -22,6 +22,8 @@ S2 button is reset.
 
 - History
 
+Ver.20241221
+ The APU memory also coexists with SDRAM.
 Ver.20240223
  Changed to microSDHC card and FAT32 file system.
 Ver.20240103

@@ -4,9 +4,10 @@
 
 circuit ppu2_core
 {
-	input A<5>, D_in<8>;
-	output D_out<8>;
-	instrin read_io(A), write_io(A, D_in);
+	input io_A<5>, io_D_in<8>;
+	reg io_Dout_reg<8>;
+	output io_D_out<8>;
+	instrin io_read(io_A), io_write(io_A, io_D_in);
 	output NMIn, IRQn;
 	reg_wr NMI_reg, f_nmi, IRQ_reg, f_irq;
 	instrout dma_start, hdma_start;
@@ -30,36 +31,36 @@ output dbg<16>;
 	sel h_code<8>;
 	reg_wr h_code_reg<8>;
 
-	sel Aio<8>;
+	sel ioA<8>;
 
 	reg_wr f_NMI_enable, f_joypad_auto, key_reading;
 	instrout key_polling;
-	reg_wr scanline<9>, scanline_tmp<9>;
+	reg scanline<9>, scanline_tmp<9>;
 
 	instrout hdma_enable, hdma_init;
 
-	reg_wr f_timer_v_enable, f_timer_h_enable;
-	reg_wr r4202_mA<8>;
+	reg f_timer_v_enable, f_timer_h_enable;
+	reg r4202_mA<8>;
 	mul_8 mulu8;
-	reg_wr r4204_dL<8>, r4205_dH<8>;
+	reg r4204_dL<8>, r4205_dH<8>;
 	div_u16 divu16;
 	reg_ws r4207_dL<8>, r4208_dH;
 	reg_ws r4209_dL<8>, r420A_dH;
-	reg_wr mul_div_ch;
+	reg mul_div_ch;
 //	reg_wr r4210<8>;
-	reg_ws r4213<8>; // 初期値 0xFF
+	reg r4213<8>; // 初期値 0xFF
 
-	reg_wr scanpixel<9>;
+	reg scanpixel<9>;
 	sel timer_v_count<9>, timer_h_count<9>;
 
 reg_wr ready_rnd<6>;
 
 	instrout hv_count_latch;
-	reg_ws f_latched_count_en; // 初期値 0b1
+	reg f_latched_count_en; // 初期値 0b1
 	output latched_count_en;
 
 	output f_cpu_speed;
-	reg_wr f_cpu_speed_reg;
+	reg f_cpu_speed_reg;
 	instrout dram_refresh;
 
 	reg_wr nmi_wait<4>, irq_wait<4>;
@@ -87,11 +88,10 @@ reg_wr ready_rnd<6>;
 
 	instruct soft_reset reset := 0b1;
 
-	Aio = 0b000 || A;
+	ioA = 0b000 || io_A;
 
-	reg_wr Dout_reg<8>;
-	if(read_io) Dout_reg := D_out;
-	else D_out = Dout_reg;
+	if(io_read) io_Dout_reg := io_D_out;
+	else io_D_out = io_Dout_reg;
 
 	timer_h_count = r4208_dH || r4207_dL;
 	timer_v_count = r420A_dH || r4209_dL;
@@ -112,93 +112,93 @@ reg_wr ready_rnd<6>;
 	f_halt = halt_code!=0x00;
 	halt_code = h_code_reg;
 
-	instruct write_io any{
-		Aio==0x00 : par{ // $4200
-			f_NMI_enable := D_in<7>;
-          	if(D_in<7> & (^f_NMI_enable) & fi_vblank & f_nmi){
+	instruct io_write any{
+		ioA==0x00 : par{ // $4200
+			f_NMI_enable := io_D_in<7>;
+          	if(io_D_in<7> & (^f_NMI_enable) & fi_vblank & f_nmi){
 				NMI_reg := 0b1;
 			//	generate delay_NMI.do(8);
 			}
-			f_timer_v_enable := D_in<5>;
-			f_timer_h_enable := D_in<4>;
-			if(D_in<5:4>==0b00){
+			f_timer_v_enable := io_D_in<5>;
+			f_timer_h_enable := io_D_in<4>;
+			if(io_D_in<5:4>==0b00){
 				f_irq := 0b0;
 				IRQ_reg := 0b0;
 			}
 /*
-			if((D_in<5:4>==0b10) & (scanline==timer_v_count)){
+			if((io_D_in<5:4>==0b10) & (scanline==timer_v_count)){
 				f_irq := 0b1;
 				IRQ_reg := 0b1;
 			}
 */
-			f_joypad_auto := D_in<0>;
+			f_joypad_auto := io_D_in<0>;
 		}
-		Aio==0x01 : par{ // 0x4201
-			if((D_in<7>==0b0) & f_latched_count_en){
+		ioA==0x01 : par{ // 0x4201
+			if((io_D_in<7>==0b0) & f_latched_count_en){
 				hv_count_latch();
 			}
-			f_latched_count_en := D_in<7>;
-			r4213 := D_in;
+			f_latched_count_en := io_D_in<7>;
+			r4213 := io_D_in;
 		}
-		Aio==0x02 : r4202_mA := D_in;
-		Aio==0x03 : par{
-			mulu8.set(r4202_mA, D_in);
+		ioA==0x02 : r4202_mA := io_D_in;
+		ioA==0x03 : par{
+			mulu8.set(r4202_mA, io_D_in);
 			mul_div_ch := 0b0;
 		}
-		Aio==0x04 : r4204_dL := D_in;
-		Aio==0x05 : r4205_dH := D_in;
-		Aio==0x06 : par{
-			divu16.set(r4205_dH||r4204_dL, D_in);
+		ioA==0x04 : r4204_dL := io_D_in;
+		ioA==0x05 : r4205_dH := io_D_in;
+		ioA==0x06 : par{
+			divu16.set(r4205_dH||r4204_dL, io_D_in);
 			mul_div_ch := 0b1;
 		}
-		Aio==0x07 : r4207_dL := D_in; // h_count
-		Aio==0x08 : r4208_dH := D_in<0>;
-		Aio==0x09 : r4209_dL := D_in; // v_count
-		Aio==0x0A : r420A_dH := D_in<0>;
-		Aio==0x0B : dma_start(); // $420B
-		Aio==0x0C : hdma_enable(); // HDMA
-		Aio==0x0D : f_cpu_speed_reg := D_in<0>; // Access Cycle Designation in Memory (2) Area
-	//	Aio==0x0E : ; // Unknown
-	//	Aio==0x0F : ; // Unknown
-	//	Aio==0x10 : ;//r4210 := 0x02; 書き込みなし
-	//	Aio<4> & /|Aio<3:1> : ; // read only 12-1F
+		ioA==0x07 : r4207_dL := io_D_in; // h_count
+		ioA==0x08 : r4208_dH := io_D_in<0>;
+		ioA==0x09 : r4209_dL := io_D_in; // v_count
+		ioA==0x0A : r420A_dH := io_D_in<0>;
+		ioA==0x0B : dma_start(); // $420B
+		ioA==0x0C : hdma_enable(); // HDMA
+		ioA==0x0D : f_cpu_speed_reg := io_D_in<0>; // Access Cycle Designation in Memory (2) Area
+	//	ioA==0x0E : ; // Unknown
+	//	ioA==0x0F : ; // Unknown
+	//	ioA==0x10 : ;//r4210 := 0x02; 書き込みなし
+	//	ioA<4> & /|ioA<3:1> : ; // read only 12-1F
 	//	else : halt(0x01);
 	}
 
-	instruct read_io any{
-	//	Aio<4>==0b0 : D_out = open_bus;
-		Aio==0x10 : par{
-			D_out = f_nmi || open_bus<6:4> || 0x2;
+	instruct io_read any{
+	//	ioA<4>==0b0 : io_D_out = open_bus;
+		ioA==0x10 : par{
+			io_D_out = f_nmi || open_bus<6:4> || 0x2;
 			f_nmi := 0b0; // ok
 		//	NMI_reg := 0b0;
 		}
-		Aio==0x11 : par{
-			D_out = f_irq || open_bus<6:0>;
+		ioA==0x11 : par{
+			io_D_out = f_irq || open_bus<6:0>;
 			f_irq := 0b0;
 			IRQ_reg := 0b0;
 		}
-		Aio==0x12 : par{
+		ioA==0x12 : par{
 			// <0> Joy pad ready
-			D_out = fi_vblank || fi_hblank || open_bus<5:1> || key_reading;//ready_rnd<0>;
+			io_D_out = fi_vblank || fi_hblank || open_bus<5:1> || key_reading;//ready_rnd<0>;
 		//	ready_rnd := (ready_rnd<1> @ ready_rnd<0>) || ready_rnd<5:1>;
 		}
-		Aio==0x13 : D_out = f_latched_count_en || r4213<6:0>; // 0x4213 I/O Port
-		Aio==0x14 : D_out = divu16.q<7:0>;
-		Aio==0x15 : D_out = divu16.q<15:8>;
-		Aio==0x16 : any{
-			mul_div_ch : D_out = divu16.r<7:0>;
-			else       : D_out = mulu8.dout<7:0>;
+		ioA==0x13 : io_D_out = f_latched_count_en || r4213<6:0>; // 0x4213 I/O Port
+		ioA==0x14 : io_D_out = divu16.q<7:0>;
+		ioA==0x15 : io_D_out = divu16.q<15:8>;
+		ioA==0x16 : any{
+			mul_div_ch : io_D_out = divu16.r<7:0>;
+			else       : io_D_out = mulu8.dout<7:0>;
 		}
-		Aio==0x17 : any{
-			mul_div_ch : D_out = divu16.r<15:8>;
-			else       : D_out = mulu8.dout<15:8>;
+		ioA==0x17 : any{
+			mul_div_ch : io_D_out = divu16.r<15:8>;
+			else       : io_D_out = mulu8.dout<15:8>;
 		}
-		Aio==0x18 : D_out = pad_key1<3:0> || 0x0;
-		Aio==0x19 : D_out = pad_key1<11:4>;
-		Aio==0x1A : D_out = pad_key2<3:0> || 0x0;
-		Aio==0x1B : D_out = pad_key2<11:4>;
-		(Aio==0x1C) | (Aio==0x1D) | (Aio==0x1E) | (Aio==0x1F) : D_out = 0x00;
-		else : D_out = open_bus; // halt(0x02);
+		ioA==0x18 : io_D_out = pad_key1<3:0> || 0x0;
+		ioA==0x19 : io_D_out = pad_key1<11:4>;
+		ioA==0x1A : io_D_out = pad_key2<3:0> || 0x0;
+		ioA==0x1B : io_D_out = pad_key2<11:4>;
+		(ioA==0x1C) | (ioA==0x1D) | (ioA==0x1E) | (ioA==0x1F) : io_D_out = 0x00;
+		else : io_D_out = open_bus; // halt(0x02);
 	}
 
 	// clk 0
@@ -213,7 +213,7 @@ reg_wr ready_rnd<6>;
 
 	// clk 1
 	stage scan_stg {
-		reg_wr pix_add<9>;
+		reg pix_add<9>;
 		par{
 			// scanpixel -17 ～ +322 ?
 			if(FRAME.do){

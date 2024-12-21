@@ -133,7 +133,7 @@ circuit core
 	cartridge cart;
 
 	reg_wr title_str<256>, title_length<5>, str_view_reg<256>;
-	mem keys[128];
+	mem keys[256];
 
 	vjtag_uart vjtag;
 	reg_wr f_reading_rom, f_reading_spc;
@@ -235,9 +235,9 @@ circuit core
 	sdcard.RES = SD_RES;
 	sdcard.DAT = SD_DAT;
 
+	instruct fat.sread sdcard.read(fat.sadrs);
 	fat.sack = sdcard.ack;
 	fat.sdata = sdcard.rdata;
-	instruct fat.sread sdcard.read(fat.sadrs);
 
 	kb.ps2Clk = PS2_KBCLK;
 	kb.ps2Data = PS2_KBDAT;
@@ -381,7 +381,7 @@ circuit core
 		sdram.read(0b00||cart.rom_adrs);
 	}
 	cart.read_rom_data = sdram.rdata<7:0>;
-	cart.read_ack = sdram.ack;
+	if(sdram.ack) cart.read_ack();
 
 	instruct snes.write_rom cart.write();
 
@@ -400,7 +400,7 @@ circuit core
 		generate wram_ack_stg.do();
 	}
 	snes.WRAM_Dout = wram.D_out;
-	snes.WRAM_ACK = wram_ack_stg.do;
+	if(wram_ack_stg.do) snes.WRAM_ACK();
 	instruct snes.WRAM_WE par{
 		wram.write(snes.WRAM_ADDR<16:0>, snes.WRAM_Din);
 	}
@@ -679,6 +679,9 @@ circuit core
 			goto st2;
 		}
 		state st2 if(fat.ack){
+			snes.soft_reset();
+			apu.soft_reset();
+			cart.init();
 			fat.read();
 			pA := 0;
 			goto strw;

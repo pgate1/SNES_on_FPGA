@@ -14,7 +14,7 @@ circuit cartridge
 
 	reg_ws reset;
 
-	reg_wr f_hl_ok;
+	reg f_hl_ok;
 
 	instrin init;
 	input check_LH, check_A<5>, check_data<8>;
@@ -23,8 +23,8 @@ circuit cartridge
 	input sw_romtype;
 
 	instrin set_rom_type_8MB();
-	reg_wr f_rom_type_8MB;
-	reg_wr rom_type<8>;
+	reg f_rom_type_8MB;
+	reg rom_type<8>;
 	output bank_type<4>;
 	instrself lowrom_bank_mirror;
 
@@ -35,9 +35,9 @@ circuit cartridge
 #endif
 
 	instrin read;
-	instrout read_rom, read_sram;
+	instrout rom_read, sram_read;
 	output rom_adrs<23>; // 8BM対応
-	input read_rom_data<8>, read_sram_data<8>;
+	input rom_read_data<8>, sram_read_data<8>;
 	instrin read_ack;
 	output ack;
 
@@ -45,7 +45,7 @@ circuit cartridge
 	sel save_ram_mask<18>;
 	instrself map_sram;
 	instrin write;
-	instrout write_sram;
+	instrout sram_write;
 	output sram_adrs<18>;
 
 	output halt_code<8>;
@@ -185,29 +185,29 @@ dbg = cx4.dbg;
 
 	instruct read par{
 		if(map_sram){
-			read_sram();
+			sram_read();
 		}
 		else{
 #ifdef Enable_CX4
 			if(f_cx4 & (cx4.halt_code==0)) cx4.read();
-			else read_rom();
+			else rom_read();
 #else
-			read_rom();
+			rom_read();
 #endif
 		}
 	}
 
 #ifdef Enable_CX4
 	instruct cx4.rom_read_req par{
-		read_rom();
+		rom_read();
 	}
 
-	cx4.rom_data = read_rom_data;
+	cx4.rom_data = rom_read_data;
 	cx4.rom_ack = read_ack;
 #endif
 
 	if(map_sram){
-		if(save_ram_size!=0) Dout = read_sram_data;
+		if(save_ram_size!=0) Dout = sram_read_data;
 		else Dout = 0xFF; // test
 		ack = read_ack;
 	}
@@ -219,7 +219,7 @@ dbg = cx4.dbg;
 #endif
 		}
 		else{
-			Dout = read_rom_data;
+			Dout = rom_read_data;
 			ack = read_ack;
 		}
 	}
@@ -227,7 +227,7 @@ dbg = cx4.dbg;
 	instruct write par{
 		if(map_sram){
 			if(save_ram_size!=0){
-				write_sram();
+				sram_write();
 			}
 		}
 		else{

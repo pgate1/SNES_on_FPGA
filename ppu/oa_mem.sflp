@@ -1,0 +1,55 @@
+
+// 同期:readの次のサイクルに出力する
+
+%i "../mem/ram_16x256.h"
+
+circuit oa_mem
+{
+	input A<10>, D_in<8>;
+	output D_out<16>, At_out<2>;
+	instrin read(A), write(A, D_in);
+
+	ram_16x256 oram;
+//	mem cellsD[256]<16>;
+	mem cellsAt[32]<8>;
+	reg dout_reg<8>, at_reg<2>;
+
+	reg din_reg<8>;
+	reg rf;
+
+	instruct read par{
+		any{
+			A<9>==0b0 : par{ // 0x000-0x1FF
+				oram.read(A<8:1>);
+				sel at_sel<8>;
+				at_sel = cellsAt[A<8:4>];
+				any{
+					A<3:2>==0b00 : at_reg := at_sel<1:0>;
+					A<3:2>==0b01 : at_reg := at_sel<3:2>;
+					A<3:2>==0b10 : at_reg := at_sel<5:4>;
+					A<3:2>==0b11 : at_reg := at_sel<7:6>;
+				}
+			}
+			else : par{ // 0x200-0x21F
+				dout_reg := cellsAt[A<4:0>];
+			}
+		}
+		rf := A<9>;
+	}
+
+	if(rf) D_out = dout_reg || dout_reg;
+	else   D_out = oram.dout;
+	At_out = at_reg;
+
+// 二度書きレジスタ
+	instruct write any{
+		A<9>==0b0 : any{ // 0x000-0x1FF
+			A<0> : oram.write(A<8:1>, D_in || din_reg);
+			else : din_reg := D_in;
+		}
+		else : par{ // 0x200-0x21F
+			cellsAt[A<4:0>] := D_in;
+		}
+	}
+
+}

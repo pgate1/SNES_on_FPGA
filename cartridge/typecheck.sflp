@@ -7,17 +7,17 @@ circuit typecheck
 	instrin check(adrs, data);
 
 	output ROM_type<8>;
-	reg_wr ROM_type_reg<8>;
+	reg ROM_type_reg<8>;
 	output ROM_size<4>;
-	reg_wr ROM_size_reg<4>;
+	reg ROM_size_reg<4>;
 	output BankType<4>;
-	reg_wr BankType_reg<4>;
+	reg BankType_reg<4>;
 	output SRAM_size<4>;
-	reg_wr SRAM_size_reg<4>;
+	reg SRAM_size_reg<4>;
 
-	reg_wr cksum_1C<8>, cksum_1D<8>, cksum_1E<8>;
+	reg cksum_1C<8>, cksum_1D<8>, cksum_1E<8>;
 
-	reg_wr p1<8>, p2<8>;
+	reg p1<8>, p2<8>;
 	output point<8>;
 
 	point = p1 + p2;

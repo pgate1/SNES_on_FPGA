@@ -1,5 +1,5 @@
 
-%i "cgram_256.h"
+%i "cg_mem.h"
 %i "bg.h"
 %i "obj_core.h"
 %i "mode7.h"
@@ -9,14 +9,14 @@
 
 circuit ppu1_core
 {
-	input A<6>, D_in<8>;
-	output D_out<8>;
-	reg_wr Dout_reg<8>;
-	instrin read_io(A), write_io(A, D_in);
+	input io_A<6>, io_D_in<8>;
+	output io_D_out<8>;
+	reg io_Dout_reg<8>;
+	instrin io_read(io_A), io_write(io_A, io_D_in);
 
 	instrin draw, hsync;
 	input scanline<9>, vblank, hblank;
-	reg_wr scanline_latch<9>;
+	reg scanline_latch<9>;
 	instrin vblank_begin, vblank_end;
 	output f_overscan;
 	reg_wr f_overscan_reg;
@@ -45,94 +45,95 @@ output dbg<16>;
 	sel h_code<8>;
 	reg_wr h_code_reg<8>;
 
-	sel Aio<8>;
+	sel ioA<8>;
 
 	reg_ws f_forceblanking, f_forceblanking_v;
 	reg_wr n_brightness<4>;
-	reg_wr f_vadrs_hl, vadrs_inc<8>;
+	reg f_vadrs_hl, vadrs_inc<8>;
 
 	sel vram_adrs<15>, vram_adrs_remap<15>;
-	reg_wr r2116_vaL<8>, r2117_vaH<7>;
+	reg r2116_vaL<8>, r2117_vaH<7>;
 	sel vram_adrs_s<15>;
 	instrself vram_adrs_next, make_vram_adrs(vram_adrs_s);
-	reg_wr vadrs_remap<2>;
+	reg vadrs_remap<2>;
 
-	reg_wr bgsc_low<8>;
-	reg_wr bg_hsync;
+	reg bgsc_low<8>;
+	reg bg_hsync;
 
-	cgram_256 main_cgram, sub_cgram;
-	reg_wr read_cgram_ack;
+	cg_mem main_cgram, sub_cgram;
+	reg_wr cgram_read_ack;
 
 	bg bg1;
-	reg_wr bg1_tile_base<5>, bg1_sc_size<2>, bg1_tile_size;
-	reg_wr bg1_mosaic_enable, bg1_chr_base<3>;
-	reg_wr bg1_h_scroll<13>, bg1_v_scroll<13>;
-	reg_wr bg1_main_enable, bg1_sub_enable;
+	reg bg1_tile_base<5>, bg1_sc_size<2>, bg1_tile_size;
+	reg bg1_mosaic_enable, bg1_chr_base<3>;
+	reg bg1_h_scroll<13>, bg1_v_scroll<13>;
+	reg bg1_main_enable, bg1_sub_enable;
 	bg bg2;
-	reg_wr bg2_tile_base<5>, bg2_sc_size<2>, bg2_tile_size;
-	reg_wr bg2_mosaic_enable, bg2_chr_base<3>;
-	reg_wr bg2_h_scroll<10>, bg2_v_scroll<10>;
-	reg_wr bg2_main_enable, bg2_sub_enable;
+	reg bg2_tile_base<5>, bg2_sc_size<2>, bg2_tile_size;
+	reg bg2_mosaic_enable, bg2_chr_base<3>;
+	reg bg2_h_scroll<10>, bg2_v_scroll<10>;
+	reg bg2_main_enable, bg2_sub_enable;
 	bg bg3;
-	reg_wr bg3_tile_base<5>, bg3_sc_size<2>, bg3_tile_size;
-	reg_wr bg3_mosaic_enable, bg3_chr_base<3>;
-	reg_wr bg3_h_scroll<10>, bg3_v_scroll<10>;
-	reg_wr bg3_main_enable, bg3_sub_enable;
+	reg bg3_tile_base<5>, bg3_sc_size<2>, bg3_tile_size;
+	reg bg3_mosaic_enable, bg3_chr_base<3>;
+	reg bg3_h_scroll<10>, bg3_v_scroll<10>;
+	reg bg3_main_enable, bg3_sub_enable;
 	bg bg4;
-	reg_wr bg4_tile_base<5>, bg4_sc_size<2>, bg4_tile_size;
-	reg_wr bg4_mosaic_enable, bg4_chr_base<3>;
-	reg_wr bg4_h_scroll<10>, bg4_v_scroll<10>;
-	reg_wr bg4_main_enable, bg4_sub_enable;
-	reg_wr mosaic_size<4>;
+	reg bg4_tile_base<5>, bg4_sc_size<2>, bg4_tile_size;
+	reg bg4_mosaic_enable, bg4_chr_base<3>;
+	reg bg4_h_scroll<10>, bg4_v_scroll<10>;
+	reg bg4_main_enable, bg4_sub_enable;
+	reg mosaic_size<4>;
 	obj_core obj;
-	reg_wr obj_size<3>, obj_name_select<2>, obj_name_base<2>;
-	reg_wr f_obj_priority_rotation;
-	reg_wr obj_adrs<10>;
-	reg_wr obj_main_enable, obj_sub_enable;
-	reg_wr r2102_oaL<8>, r2103_oaH;
+	reg obj_size<3>, obj_name_select<2>, obj_name_base<2>;
+	reg f_obj_priority_rotation;
+	reg obj_adrs<10>;
+	reg obj_main_enable, obj_sub_enable;
+	reg r2102_oaL<8>, r2103_oaH;
 	mode7 md7;
-	reg_wr md7_empspace, md7_empfill, md7_v_flip, md7_h_flip;
-	reg_wr md7_rA<16>, md7_rB<16>, md7_rC<16>, md7_rD<16>;
-	reg_wr md7_rot<8>; // temp
-	reg_wr md7_cX<13>, md7_cY<13>;
+	reg md7_empspace, md7_empfill, md7_v_flip, md7_h_flip;
+	reg md7_rA<16>, md7_rB<16>, md7_rC<16>, md7_rD<16>;
+	reg md7_rot<8>; // temp
+	reg md7_cX<13>, md7_cY<13>;
 
-	reg_wr read_oam_ack<2>;
+	reg_wr oam_read_ack<2>;
 
-	reg_wr bg_mode<3>;//, bg_mode_tmp<3>;
+	reg bg_mode<3>;//, bg_mode_tmp<3>;
 	reg_wr scantile<6>, vx<9>;
-	reg_wr f_bg3_pri;//, f_bg3_pri_tmp;
+	reg f_bg3_pri;//, f_bg3_pri_tmp;
 
 	reg_wr obj_searching, obj_fetching;
 
 	instrself make_col;
 
-	reg_wr r211B_mA<16>, r211C_mB<16>;
+	reg r211B_mA<16>, r211C_mB<16>;
 	mul_s16 muls16;
 
 	input f_latched_count_en;
 	instrin hv_count_latch;
 	instrself hv_count_latch_s;
-	reg_wr latched_h_count<9>, latched_v_count<9>;
-	reg_wr f_external_latch, vx_add<9>;
+	reg latched_h_count<9>, latched_v_count<9>;
+	reg_wr f_external_latch;
+	reg vx_add<9>;
 	reg_ws fi_hc_flip, fi_vc_flip;
 
 	window bg1_win;
-	reg_wr bg1_win_en1, bg1_win_en2, bg1_win_io1, bg1_win_io2, bg1_win_logic<2>;
+	reg bg1_win_en1, bg1_win_en2, bg1_win_io1, bg1_win_io2, bg1_win_logic<2>;
 	reg_wr bg1_main_mask_enable, bg1_sub_mask_enable;
 	window bg2_win;
-	reg_wr bg2_win_en1, bg2_win_en2, bg2_win_io1, bg2_win_io2, bg2_win_logic<2>;
+	reg bg2_win_en1, bg2_win_en2, bg2_win_io1, bg2_win_io2, bg2_win_logic<2>;
 	reg_wr bg2_main_mask_enable, bg2_sub_mask_enable;
 	window bg3_win;
-	reg_wr bg3_win_en1, bg3_win_en2, bg3_win_io1, bg3_win_io2, bg3_win_logic<2>;
+	reg bg3_win_en1, bg3_win_en2, bg3_win_io1, bg3_win_io2, bg3_win_logic<2>;
 	reg_wr bg3_main_mask_enable, bg3_sub_mask_enable;
 	window bg4_win;
-	reg_wr bg4_win_en1, bg4_win_en2, bg4_win_io1, bg4_win_io2, bg4_win_logic<2>;
+	reg bg4_win_en1, bg4_win_en2, bg4_win_io1, bg4_win_io2, bg4_win_logic<2>;
 	reg_wr bg4_main_mask_enable, bg4_sub_mask_enable;
 	window obj_win;
-	reg_wr obj_win_en1, obj_win_en2, obj_win_io1, obj_win_io2, obj_win_logic<2>;
+	reg obj_win_en1, obj_win_en2, obj_win_io1, obj_win_io2, obj_win_logic<2>;
 	reg_wr obj_main_mask_enable, obj_sub_mask_enable;
 	window col_win;
-	reg_wr col_win_en1, col_win_en2, col_win_io1, col_win_io2, col_win_logic<2>;
+	reg col_win_en1, col_win_en2, col_win_io1, col_win_io2, col_win_logic<2>;
 	reg_wr win1_left<8>, win1_right<8>, win2_left<8>, win2_right<8>;
 
 	reg_wr force_black<2>, prevent_math<2>, f_subscreen_math;
@@ -141,20 +142,20 @@ output dbg<16>;
 	reg_wr bg3_colmath_enable, bg4_colmath_enable;
 	reg_wr obj_colmath_enable, back_colmath_enable;
 	reg_wr f_half_colmath, f_colmath_op;
-	reg_wr fixedcol_B<5>, fixedcol_G<5>, fixedcol_R<5>;
+	reg fixedcol_B<5>, fixedcol_G<5>, fixedcol_R<5>;
 
 	reg_wr f_ExtBG, f_pH512;
 
-	reg_wr fi_sub_col_id, fi_screen_math;
+	reg fi_sub_col_id, fi_screen_math;
 	sel main_col<15>;
-	reg_wr m_z_reg<3>;
+	reg m_z_reg<3>;
 
 	instrself screen_math;
 	colormath colmath_R, colmath_G, colmath_B;
 
-	reg_wr f_frameflip;
+	reg f_frameflip;
 
-	reg_wr open_bus1<8>, open_bus2<8>;
+	reg open_bus1<8>, open_bus2<8>;
 
 	reg_wr dbg_reg<16>;
 
@@ -180,34 +181,64 @@ output dbg<16>;
 	}
 
 	if(reset){
-		reset := 0b0;
+		bg1.init();
+		bg2.init();
+		bg3.init();
+		bg4.init();
+
+	//	bg1_tile_base, bg1_sc_size := 0b00; bg1_tile_size := 0b0;
+		bg1_mosaic_enable := 0b0;
+	//	bg1_chr_base := 0b000;
+	//	bg1_h_scroll := 0; bg1_v_scroll := 0;
+	//	bg1_main_enable := 0b0; bg1_sub_enable := 0b0;
+
+	//	bg2_tile_base<5>, bg2_sc_size<2>, bg2_tile_size;
+		bg2_mosaic_enable := 0b0;
+	//	bg2_chr_base<3>;
+	//	bg2_h_scroll := 0; bg2_v_scroll := 0;
+	//	bg2_main_enable := 0b0; bg2_sub_enable := 0b0;
+
+	//	bg3_tile_base<5>, bg3_sc_size<2>, bg3_tile_size;
+		bg3_mosaic_enable := 0b0;
+	//	bg3_chr_base<3>;
+	//	bg3_h_scroll := 0; bg3_v_scroll := 0;
+	//	bg3_main_enable := 0b0; bg3_sub_enable := 0b0;
+
+	//	bg4_tile_base<5>, bg4_sc_size<2>, bg4_tile_size;
+		bg4_mosaic_enable := 0b0;
+	//	bg4_chr_base<3>;
+	//	bg4_h_scroll := 0; bg4_v_scroll := 0;
+	//	bg4_main_enable := 0b0; bg4_sub_enable := 0b0;
+
 		fixedcol_B := 0b00000;
 		fixedcol_G := 0b00000;
 		fixedcol_R := 0b00000;
+
+		reset := 0b0;
 	}
 
 	instruct soft_reset reset := 0b1;
 
-	Aio = 0b00 || A;
+	ioA = 0b00 || io_A;
 
 	any{
-		read_io : Dout_reg := D_out;
-		read_oam_ack<0> : par{
+		io_read : io_Dout_reg := io_D_out;
+		oam_read_ack<0> : par{
 			any{
-				read_oam_ack<1> : D_out = obj.D_out<15:8>;
-				else            : D_out = obj.D_out< 7:0>;
+				oam_read_ack<1> : io_D_out = obj.D_out<15:8>;
+				else            : io_D_out = obj.D_out< 7:0>;
 			}
-			Dout_reg := D_out;
-			read_oam_ack := 0b00;
-			open_bus1 := D_out;
+			io_Dout_reg := io_D_out;
+			oam_read_ack := 0b00;
+			open_bus1 := io_D_out;
 		}
-		read_cgram_ack : par{
-			D_out = main_cgram.D_out<7:0>;
-			Dout_reg := D_out;
-			read_cgram_ack := 0b0;
-			open_bus2 := D_out;
+		cgram_read_ack : par{
+			io_D_out = main_cgram.D_out<7:0>;
+			io_Dout_reg := io_D_out;
+			cgram_read_ack := 0b0;
+			open_bus2 := io_D_out;
 		}
-		else : D_out = Dout_reg;
+		else : io_D_out = io_Dout_reg;
 	}
 
 	switch(bg_mode){
@@ -405,339 +436,339 @@ output dbg<16>;
 		r2117_vaH := va_add_sig<14:8>;
 	}
 
-	instruct write_io any{
-		Aio==0x00 : par{
+	instruct io_write any{
+		ioA==0x00 : par{
 			// 即時 ok：アウターワールド
 			// temp ok：ヴァルケン,(バハムートラグーンOPのスプライト)
-			f_forceblanking := D_in<7>;
-			n_brightness := D_in<3:0>;
+			f_forceblanking := io_D_in<7>;
+			n_brightness := io_D_in<3:0>;
 		}
-		Aio==0x01 : par{
-			obj_size := D_in<7:5>;
-			obj_name_select := D_in<4:3>;
-			obj_name_base := D_in<1:0>; // bit2=0 ?
+		ioA==0x01 : par{
+			obj_size := io_D_in<7:5>;
+			obj_name_select := io_D_in<4:3>;
+			obj_name_base := io_D_in<1:0>; // bit2=0 ?
 		}
-		Aio==0x02 : par{
-			obj_adrs := r2103_oaH || D_in || 0b0;
-			r2102_oaL := D_in;
+		ioA==0x02 : par{
+			obj_adrs := r2103_oaH || io_D_in || 0b0;
+			r2102_oaL := io_D_in;
 		}
-		Aio==0x03 : par{
-			obj_adrs := D_in<0> || r2102_oaL || 0b0;
-			f_obj_priority_rotation := D_in<7>;
-			r2103_oaH := D_in<0>;
+		ioA==0x03 : par{
+			obj_adrs := io_D_in<0> || r2102_oaL || 0b0;
+			f_obj_priority_rotation := io_D_in<7>;
+			r2103_oaH := io_D_in<0>;
 		}
-		Aio==0x04 : par{
-			obj.oam_write(obj_adrs, D_in);
+		ioA==0x04 : par{
+			obj.oam_write(obj_adrs, io_D_in);
 			if(obj_adrs==(0b10||0x1F)) obj_adrs := (0b00||0x00);
 			else obj_adrs++;
 		}
-		Aio==0x05 : par{
-			bg_mode := D_in<2:0>;
-			f_bg3_pri := D_in<3:0>==0b1001; // BG Mode==1
-			bg1_tile_size := D_in<4>; bg2_tile_size := D_in<5>;
-			bg3_tile_size := D_in<6>; bg4_tile_size := D_in<7>;
+		ioA==0x05 : par{
+			bg_mode := io_D_in<2:0>;
+			f_bg3_pri := io_D_in<3:0>==0b1001; // BG Mode==1
+			bg1_tile_size := io_D_in<4>; bg2_tile_size := io_D_in<5>;
+			bg3_tile_size := io_D_in<6>; bg4_tile_size := io_D_in<7>;
 		}
-		Aio==0x06 : par{
-			mosaic_size := D_in<7:4>;
-			bg4_mosaic_enable := D_in<3>; bg3_mosaic_enable := D_in<2>;
-			bg2_mosaic_enable := D_in<1>; bg1_mosaic_enable := D_in<0>;
-			if(mosaic_size != D_in<7:4>){
+		ioA==0x06 : par{
+			mosaic_size := io_D_in<7:4>;
+			bg4_mosaic_enable := io_D_in<3>; bg3_mosaic_enable := io_D_in<2>;
+			bg2_mosaic_enable := io_D_in<1>; bg1_mosaic_enable := io_D_in<0>;
+			if(mosaic_size != io_D_in<7:4>){
 				bg1.mos_reset(); bg2.mos_reset();
 				bg3.mos_reset(); bg4.mos_reset();
 			}
 		}
-		Aio==0x07 : par{
-			bg1_tile_base := D_in<6:2>;
-			bg1_sc_size := D_in<1:0>;
+		ioA==0x07 : par{
+			bg1_tile_base := io_D_in<6:2>;
+			bg1_sc_size := io_D_in<1:0>;
 		}
-		Aio==0x08 : par{
-			bg2_tile_base := D_in<6:2>;
-			bg2_sc_size := D_in<1:0>;
+		ioA==0x08 : par{
+			bg2_tile_base := io_D_in<6:2>;
+			bg2_sc_size := io_D_in<1:0>;
 		}
-		Aio==0x09 : par{
-			bg3_tile_base := D_in<6:2>;
-			bg3_sc_size := D_in<1:0>;
+		ioA==0x09 : par{
+			bg3_tile_base := io_D_in<6:2>;
+			bg3_sc_size := io_D_in<1:0>;
 		}
-		Aio==0x0A : par{
-			bg4_tile_base := D_in<6:2>;
-			bg4_sc_size := D_in<1:0>;
+		ioA==0x0A : par{
+			bg4_tile_base := io_D_in<6:2>;
+			bg4_sc_size := io_D_in<1:0>;
 		}
-		Aio==0x0B : par{
-			bg1_chr_base := D_in<2:0>;
-			bg2_chr_base := D_in<6:4>;
+		ioA==0x0B : par{
+			bg1_chr_base := io_D_in<2:0>;
+			bg2_chr_base := io_D_in<6:4>;
 		}
-		Aio==0x0C : par{
-			bg3_chr_base := D_in<2:0>;
-			bg4_chr_base := D_in<6:4>;
+		ioA==0x0C : par{
+			bg3_chr_base := io_D_in<2:0>;
+			bg4_chr_base := io_D_in<6:4>;
 		}
-		Aio==0x0D : par{
-			bg1_h_scroll := D_in<4:0> || bgsc_low;
-			bgsc_low := D_in;
+		ioA==0x0D : par{
+			bg1_h_scroll := io_D_in<4:0> || bgsc_low;
+			bgsc_low := io_D_in;
 		}
-		Aio==0x0E : par{
-			bg1_v_scroll := D_in<4:0> || bgsc_low;
-			bgsc_low := D_in;
+		ioA==0x0E : par{
+			bg1_v_scroll := io_D_in<4:0> || bgsc_low;
+			bgsc_low := io_D_in;
 		}
-		Aio==0x0F : par{
-			bg2_h_scroll := D_in<1:0> || bgsc_low;
-			bgsc_low := D_in;
+		ioA==0x0F : par{
+			bg2_h_scroll := io_D_in<1:0> || bgsc_low;
+			bgsc_low := io_D_in;
 		}
-		Aio==0x10 : par{
-			bg2_v_scroll := D_in<1:0> || bgsc_low;
-			bgsc_low := D_in;
+		ioA==0x10 : par{
+			bg2_v_scroll := io_D_in<1:0> || bgsc_low;
+			bgsc_low := io_D_in;
 		}
-		Aio==0x11 : par{
-			bg3_h_scroll := D_in<1:0> || bgsc_low;
-			bgsc_low := D_in;
+		ioA==0x11 : par{
+			bg3_h_scroll := io_D_in<1:0> || bgsc_low;
+			bgsc_low := io_D_in;
 		}
-		Aio==0x12 : par{
-			bg3_v_scroll := D_in<1:0> || bgsc_low;
-			bgsc_low := D_in;
+		ioA==0x12 : par{
+			bg3_v_scroll := io_D_in<1:0> || bgsc_low;
+			bgsc_low := io_D_in;
 		}
-		Aio==0x13 : par{
-			bg4_h_scroll := D_in<1:0> || bgsc_low;
-			bgsc_low := D_in;
+		ioA==0x13 : par{
+			bg4_h_scroll := io_D_in<1:0> || bgsc_low;
+			bgsc_low := io_D_in;
 		}
-		Aio==0x14 : par{
-			bg4_v_scroll := D_in<1:0> || bgsc_low;
-			bgsc_low := D_in;
+		ioA==0x14 : par{
+			bg4_v_scroll := io_D_in<1:0> || bgsc_low;
+			bgsc_low := io_D_in;
 		}
-		Aio==0x15 : par{
-			f_vadrs_hl := D_in<7>;
-			vadrs_remap := D_in<3:2>;
-			switch(D_in<1:0>){
+		ioA==0x15 : par{
+			f_vadrs_hl := io_D_in<7>;
+			vadrs_remap := io_D_in<3:2>;
+			switch(io_D_in<1:0>){
 			case 0b00 : vadrs_inc := 0x01; // 1
 			case 0b01 : vadrs_inc := 0x20; // 32
 			case 0b10 : vadrs_inc := 0x80; // 128 ok
 			case 0b11 : vadrs_inc := 0x80; // 128
 			}
 		}
-		Aio==0x16 : par{
-			r2116_vaL := D_in;
-			make_vram_adrs(r2117_vaH || D_in);
+		ioA==0x16 : par{
+			r2116_vaL := io_D_in;
+			make_vram_adrs(r2117_vaH || io_D_in);
 		//	if(vblank | f_forceblanking){
 				vram_read(vram_adrs_remap);
 		//	}
 		}
-		Aio==0x17 : par{
-			r2117_vaH := D_in<6:0>;
-			make_vram_adrs(D_in<6:0> || r2116_vaL);
+		ioA==0x17 : par{
+			r2117_vaH := io_D_in<6:0>;
+			make_vram_adrs(io_D_in<6:0> || r2116_vaL);
 		//	if(vblank | f_forceblanking){
 				vram_read(vram_adrs_remap);
 		//	}
 		}
-		Aio==0x18 : par{
+		ioA==0x18 : par{
 			make_vram_adrs(vram_adrs);
 			if(vblank | f_forceblanking){
-				vramA_write(vram_adrs_remap, D_in); // Low write
+				vramA_write(vram_adrs_remap, io_D_in); // Low write
 				if(^f_vadrs_hl) vram_adrs_next();
 			}
 		}
-		Aio==0x19 : par{
+		ioA==0x19 : par{
 			make_vram_adrs(vram_adrs);
 			if(vblank | f_forceblanking){
-				vramB_write(vram_adrs_remap, D_in); // High write
+				vramB_write(vram_adrs_remap, io_D_in); // High write
 				if(f_vadrs_hl) vram_adrs_next();
 			}
 		}
-		Aio==0x1A : par{ // Mode 7 setting
-			md7_empspace := D_in<7>;
-			md7_empfill := D_in<6>;
-			md7_v_flip := D_in<1>;
-			md7_h_flip := D_in<0>;
+		ioA==0x1A : par{ // Mode 7 setting
+			md7_empspace := io_D_in<7>;
+			md7_empfill := io_D_in<6>;
+			md7_v_flip := io_D_in<1>;
+			md7_h_flip := io_D_in<0>;
 		}
-		Aio==0x1B : par{
-			r211B_mA := D_in || md7_rot;
-			md7_rA := D_in || md7_rot;
-			md7_rot := D_in;
+		ioA==0x1B : par{
+			r211B_mA := io_D_in || md7_rot;
+			md7_rA := io_D_in || md7_rot;
+			md7_rot := io_D_in;
 		}
-		Aio==0x1C : par{
-			r211C_mB := D_in || md7_rot;
-			md7_rB := D_in || md7_rot;
-			md7_rot := D_in;
+		ioA==0x1C : par{
+			r211C_mB := io_D_in || md7_rot;
+			md7_rB := io_D_in || md7_rot;
+			md7_rot := io_D_in;
 		}
-		Aio==0x1D : par{
-			md7_rC := D_in || md7_rot;
-			md7_rot := D_in;
+		ioA==0x1D : par{
+			md7_rC := io_D_in || md7_rot;
+			md7_rot := io_D_in;
 		}
-		Aio==0x1E : par{
-			md7_rD := D_in || md7_rot;
-			md7_rot := D_in;
+		ioA==0x1E : par{
+			md7_rD := io_D_in || md7_rot;
+			md7_rot := io_D_in;
 		}
-		Aio==0x1F : par{
-			md7_cX := D_in<4:0> || md7_rot;
-			md7_rot := D_in;
+		ioA==0x1F : par{
+			md7_cX := io_D_in<4:0> || md7_rot;
+			md7_rot := io_D_in;
 		}
-		Aio==0x20 : par{
-			md7_cY := D_in<4:0> || md7_rot;
-			md7_rot := D_in;
+		ioA==0x20 : par{
+			md7_cY := io_D_in<4:0> || md7_rot;
+			md7_rot := io_D_in;
 		}
-		Aio==0x21 : par{
+		ioA==0x21 : par{
 			if(vblank | hblank | f_forceblanking){
-				main_cgram.set(D_in);
-				sub_cgram.set(D_in);
+				main_cgram.set(io_D_in);
+				sub_cgram.set(io_D_in);
 			}
 		}
-		Aio==0x22 : par{
+		ioA==0x22 : par{
 			if(vblank | hblank | f_forceblanking){
-				main_cgram.write(D_in);
-				sub_cgram.write(D_in);
+				main_cgram.write(io_D_in);
+				sub_cgram.write(io_D_in);
 			}
 		}
-		Aio==0x23 : par{ // BG1,2 win io en
-			bg1_win_io1 := D_in<0>; bg1_win_en1 := D_in<1>;
-			bg1_win_io2 := D_in<2>; bg1_win_en2 := D_in<3>;
-			bg2_win_io1 := D_in<4>; bg2_win_en1 := D_in<5>;
-			bg2_win_io2 := D_in<6>; bg2_win_en2 := D_in<7>;
+		ioA==0x23 : par{ // BG1,2 win io en
+			bg1_win_io1 := io_D_in<0>; bg1_win_en1 := io_D_in<1>;
+			bg1_win_io2 := io_D_in<2>; bg1_win_en2 := io_D_in<3>;
+			bg2_win_io1 := io_D_in<4>; bg2_win_en1 := io_D_in<5>;
+			bg2_win_io2 := io_D_in<6>; bg2_win_en2 := io_D_in<7>;
 		}
-		Aio==0x24 : par{ // BG3,4 win io en
-			bg3_win_io1 := D_in<0>; bg3_win_en1 := D_in<1>;
-			bg3_win_io2 := D_in<2>; bg3_win_en2 := D_in<3>;
-			bg4_win_io1 := D_in<4>; bg4_win_en1 := D_in<5>;
-			bg4_win_io2 := D_in<6>; bg4_win_en2 := D_in<7>;
+		ioA==0x24 : par{ // BG3,4 win io en
+			bg3_win_io1 := io_D_in<0>; bg3_win_en1 := io_D_in<1>;
+			bg3_win_io2 := io_D_in<2>; bg3_win_en2 := io_D_in<3>;
+			bg4_win_io1 := io_D_in<4>; bg4_win_en1 := io_D_in<5>;
+			bg4_win_io2 := io_D_in<6>; bg4_win_en2 := io_D_in<7>;
 		}
-		Aio==0x25 : par{ // OBJ,COL win io en
-			obj_win_io1 := D_in<0>; obj_win_en1 := D_in<1>;
-			obj_win_io2 := D_in<2>; obj_win_en2 := D_in<3>;
-			col_win_io1 := D_in<4>; col_win_en1 := D_in<5>;
-			col_win_io2 := D_in<6>; col_win_en2 := D_in<7>;
+		ioA==0x25 : par{ // OBJ,COL win io en
+			obj_win_io1 := io_D_in<0>; obj_win_en1 := io_D_in<1>;
+			obj_win_io2 := io_D_in<2>; obj_win_en2 := io_D_in<3>;
+			col_win_io1 := io_D_in<4>; col_win_en1 := io_D_in<5>;
+			col_win_io2 := io_D_in<6>; col_win_en2 := io_D_in<7>;
 		}
-		Aio==0x26 : win1_left  := D_in;
-		Aio==0x27 : win1_right := D_in;
-		Aio==0x28 : win2_left  := D_in;
-		Aio==0x29 : win2_right := D_in;
-		Aio==0x2A : par{ // win logic
-			bg1_win_logic := D_in<1:0>; bg2_win_logic := D_in<3:2>;
-			bg3_win_logic := D_in<5:4>; bg4_win_logic := D_in<7:6>;
+		ioA==0x26 : win1_left  := io_D_in;
+		ioA==0x27 : win1_right := io_D_in;
+		ioA==0x28 : win2_left  := io_D_in;
+		ioA==0x29 : win2_right := io_D_in;
+		ioA==0x2A : par{ // win logic
+			bg1_win_logic := io_D_in<1:0>; bg2_win_logic := io_D_in<3:2>;
+			bg3_win_logic := io_D_in<5:4>; bg4_win_logic := io_D_in<7:6>;
 		}
-		Aio==0x2B : par{ // win logic
-			obj_win_logic := D_in<1:0>;
-			col_win_logic := D_in<3:2>;
+		ioA==0x2B : par{ // win logic
+			obj_win_logic := io_D_in<1:0>;
+			col_win_logic := io_D_in<3:2>;
 		}
-		Aio==0x2C : par{ // main enable
-			bg1_main_enable := D_in<0>; bg2_main_enable := D_in<1>;
-			bg3_main_enable := D_in<2>; bg4_main_enable := D_in<3>;
-			obj_main_enable := D_in<4>;
+		ioA==0x2C : par{ // main enable
+			bg1_main_enable := io_D_in<0>; bg2_main_enable := io_D_in<1>;
+			bg3_main_enable := io_D_in<2>; bg4_main_enable := io_D_in<3>;
+			obj_main_enable := io_D_in<4>;
 		}
-		Aio==0x2D : par{ // sub enable
-			bg1_sub_enable := D_in<0>; bg2_sub_enable := D_in<1>;
-			bg3_sub_enable := D_in<2>; bg4_sub_enable := D_in<3>;
-			obj_sub_enable := D_in<4>;
+		ioA==0x2D : par{ // sub enable
+			bg1_sub_enable := io_D_in<0>; bg2_sub_enable := io_D_in<1>;
+			bg3_sub_enable := io_D_in<2>; bg4_sub_enable := io_D_in<3>;
+			obj_sub_enable := io_D_in<4>;
 		}
-		Aio==0x2E : par{ // main mask enable
-			bg1_main_mask_enable := D_in<0>; bg2_main_mask_enable := D_in<1>;
-			bg3_main_mask_enable := D_in<2>; bg4_main_mask_enable := D_in<3>;
-			obj_main_mask_enable := D_in<4>;
+		ioA==0x2E : par{ // main mask enable
+			bg1_main_mask_enable := io_D_in<0>; bg2_main_mask_enable := io_D_in<1>;
+			bg3_main_mask_enable := io_D_in<2>; bg4_main_mask_enable := io_D_in<3>;
+			obj_main_mask_enable := io_D_in<4>;
 		}
-		Aio==0x2F : par{ // sub mask enable
-			bg1_sub_mask_enable := D_in<0>; bg2_sub_mask_enable := D_in<1>;
-			bg3_sub_mask_enable := D_in<2>; bg4_sub_mask_enable := D_in<3>;
-			obj_sub_mask_enable := D_in<4>;
+		ioA==0x2F : par{ // sub mask enable
+			bg1_sub_mask_enable := io_D_in<0>; bg2_sub_mask_enable := io_D_in<1>;
+			bg3_sub_mask_enable := io_D_in<2>; bg4_sub_mask_enable := io_D_in<3>;
+			obj_sub_mask_enable := io_D_in<4>;
 		}
-		Aio==0x30 : par{
-			force_black := D_in<7:6>;
-			prevent_math := D_in<5:4>;
-			f_subscreen_math := D_in<1>;
-			f_direct_color := D_in<0>;
+		ioA==0x30 : par{
+			force_black := io_D_in<7:6>;
+			prevent_math := io_D_in<5:4>;
+			f_subscreen_math := io_D_in<1>;
+			f_direct_color := io_D_in<0>;
 		}
-		Aio==0x31 : par{ // colmath_enable
-			bg1_colmath_enable := D_in<0>; bg2_colmath_enable := D_in<1>;
-			bg3_colmath_enable := D_in<2>; bg4_colmath_enable := D_in<3>;
-			obj_colmath_enable := D_in<4>; back_colmath_enable := D_in<5>;
-			f_half_colmath := D_in<6>; f_colmath_op := D_in<7>;
+		ioA==0x31 : par{ // colmath_enable
+			bg1_colmath_enable := io_D_in<0>; bg2_colmath_enable := io_D_in<1>;
+			bg3_colmath_enable := io_D_in<2>; bg4_colmath_enable := io_D_in<3>;
+			obj_colmath_enable := io_D_in<4>; back_colmath_enable := io_D_in<5>;
+			f_half_colmath := io_D_in<6>; f_colmath_op := io_D_in<7>;
 		}
-		Aio==0x32 : par{
-			if(D_in<7>) fixedcol_B := D_in<4:0>;
-			if(D_in<6>) fixedcol_G := D_in<4:0>;
-			if(D_in<5>) fixedcol_R := D_in<4:0>;
+		ioA==0x32 : par{
+			if(io_D_in<7>) fixedcol_B := io_D_in<4:0>;
+			if(io_D_in<6>) fixedcol_G := io_D_in<4:0>;
+			if(io_D_in<5>) fixedcol_R := io_D_in<4:0>;
 		}
-		Aio==0x33 : par{ // Screen Init Ex
-			f_ExtBG := D_in<6>;
-			f_pH512 := D_in<3>;
-			f_overscan_reg := D_in<2>;
+		ioA==0x33 : par{ // Screen Init Ex
+			f_ExtBG := io_D_in<6>;
+			f_pH512 := io_D_in<3>;
+			f_overscan_reg := io_D_in<2>;
 		}
 		// 以降は無効書き込み 0x34 - 0x3F;
 		else : ; //halt(0x01);
 	}
 
-	instruct read_io any{
-		Aio<7:4>==0x0 : D_out = open_bus1;
-		Aio<7:4>==0x1 : D_out = open_bus1;
-		Aio<7:4>==0x2 : D_out = open_bus1;
-		Aio==0x34 : par{
-			D_out = muls16.dout<7:0>;
-			open_bus1 := D_out;
+	instruct io_read any{
+		ioA<7:4>==0x0 : io_D_out = open_bus1;
+		ioA<7:4>==0x1 : io_D_out = open_bus1;
+		ioA<7:4>==0x2 : io_D_out = open_bus1;
+		ioA==0x34 : par{
+			io_D_out = muls16.dout<7:0>;
+			open_bus1 := io_D_out;
 		}
-		Aio==0x35 : par{
-			D_out = muls16.dout<15:8>;
-			open_bus1 := D_out;
+		ioA==0x35 : par{
+			io_D_out = muls16.dout<15:8>;
+			open_bus1 := io_D_out;
 		}
-		Aio==0x36 : par{
-			D_out = muls16.dout<23:16>;
-			open_bus1 := D_out;
+		ioA==0x36 : par{
+			io_D_out = muls16.dout<23:16>;
+			open_bus1 := io_D_out;
 		}
-		Aio==0x37 : par{ // HVcounter Soft Latch
+		ioA==0x37 : par{ // HVcounter Soft Latch
 			if(f_latched_count_en) hv_count_latch_s();
-			D_out = open_bus;
+			io_D_out = open_bus;
 		}
-		Aio==0x38 : par{ // Read Data From Oam
+		ioA==0x38 : par{ // Read Data From Oam
 			obj.oam_read(obj_adrs);
 			if(obj_adrs==(0b10||0x1F)) obj_adrs := (0b00||0x00);
 			else obj_adrs++;
-			read_oam_ack := obj_adrs<0> || 0b1;
+			oam_read_ack := obj_adrs<0> || 0b1;
 		}
-		Aio==0x39 : par{ // Low read
-			D_out = vramA_dout;
+		ioA==0x39 : par{ // Low read
+			io_D_out = vramA_dout;
 			make_vram_adrs(vram_adrs);
 			if(^f_vadrs_hl){
 				vram_read(vram_adrs_remap);
 				vram_adrs_next();
 			}
-			open_bus1 := D_out;
+			open_bus1 := io_D_out;
 		}
-		Aio==0x3A : par{ // High read
-			D_out = vramB_dout;
+		ioA==0x3A : par{ // High read
+			io_D_out = vramB_dout;
 			make_vram_adrs(vram_adrs);
 			if(f_vadrs_hl){
 				vram_read(vram_adrs_remap);
 				vram_adrs_next();
 			}
-			open_bus1 := D_out;
+			open_bus1 := io_D_out;
 		}
-		Aio==0x3B : par{ // read CG ram
+		ioA==0x3B : par{ // read CG ram
 			if(vblank | hblank | f_forceblanking){ // お試し
 				main_cgram.read();
-				read_cgram_ack := 0b1;
+				cgram_read_ack := 0b1;
 			}
 		}
-		Aio==0x3C : par{
+		ioA==0x3C : par{
 			// H Counter Data by External Or Software Latch
-			if(fi_hc_flip) D_out = latched_h_count<7:0>;
-			else D_out = open_bus2<7:1> || latched_h_count<8>;
+			if(fi_hc_flip) io_D_out = latched_h_count<7:0>;
+			else io_D_out = open_bus2<7:1> || latched_h_count<8>;
 			fi_hc_flip := ^fi_hc_flip;
-			open_bus2 := D_out;
+			open_bus2 := io_D_out;
 		}
-		Aio==0x3D : par{
+		ioA==0x3D : par{
 			// V Counter Data by External Or Software Latch
-			if(fi_vc_flip) D_out = latched_v_count<7:0>;
-			else D_out = open_bus2<7:1> || latched_v_count<8>;
+			if(fi_vc_flip) io_D_out = latched_v_count<7:0>;
+			else io_D_out = open_bus2<7:1> || latched_v_count<8>;
 			fi_vc_flip := ^fi_vc_flip;
-			open_bus2 := D_out;
+			open_bus2 := io_D_out;
 		}
-		Aio==0x3E : par{
+		ioA==0x3E : par{
 			// <3:0> 5c77 Version Number
-			D_out = obj.time_over || obj.range_over || 0b0 || open_bus1<4> || 0x1;
-			open_bus1 := D_out;
+			io_D_out = obj.time_over || obj.range_over || 0b0 || open_bus1<4> || 0x1;
+			open_bus1 := io_D_out;
 		}
-		Aio==0x3F : par{
+		ioA==0x3F : par{
 			// Nintendo S-PPU2 Version Number 5C78-01
-			D_out = f_frameflip || f_external_latch || open_bus2<5> || 0b0 || 0x3;
+			io_D_out = f_frameflip || f_external_latch || open_bus2<5> || 0b0 || 0x3;
 			f_external_latch := 0b0;
 			fi_hc_flip := 0b1;
 			fi_vc_flip := 0b1;
-			open_bus2 := D_out;
+			open_bus2 := io_D_out;
 		}
-		else : D_out = open_bus; //halt(0x02);
+		else : io_D_out = open_bus; //halt(0x02);
 	}
 
 	instruct hv_count_latch hv_count_latch_s();

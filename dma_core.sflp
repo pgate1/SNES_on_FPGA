@@ -21,11 +21,10 @@ circuit dma_core
 {
 	instrin io_set(ch_in, conf_in, set_D_in);
 	input ch_in<3>, conf_in<4>, set_D_in<8>;
+	reg ch<3>, conf<4>, set_D<8>;
 	instrin io_get(ch_in, conf_in);
 	output get_D<8>;
-	reg_wr get_D_reg<8>;
-
-	reg_wr ch<3>, conf<4>, set_D<8>;
+	reg get_D_reg<8>;
 
 	instrin sw_dma_serial;
 	instrin run;
@@ -42,56 +41,56 @@ circuit dma_core
 
 	output f_halt, halt_code<8>;
 
-	regs f_PPU_to_MEM[8];
+	regfile f_PPU_to_MEM[8];
 	sel ch_f_PPU_to_MEM;
 	mem r43x0_5[8] = {0};
-	regs f_incdec[8];
+	regfile f_incdec[8];
 	sel ch_f_incdec;
-	regs f_fixed_MEM_adrs[8];
+	regfile f_fixed_MEM_adrs[8];
 	sel ch_f_fixed_MEM_adrs;
-	regs n_transfar_type[8]<3>;
+	regfile n_transfar_type[8]<3>;
 	sel ch_transfar_type<3>;
-	regs adrs_PPU[8]<8>;
+	regfile adrs_PPU[8]<8>;
 	sel ch_adrs_PPU<8>;
-	regs adrs_MEM_L[8]<8>;
-	regs adrs_MEM_H[8]<8>;
+	regfile adrs_MEM_L[8]<8>;
+	regfile adrs_MEM_H[8]<8>;
 	sel ch_adrs_MEM<16>;
-	regs bank_MEM[8]<8>;
+	regfile bank_MEM[8]<8>;
 	sel ch_bank_MEM<8>;
-	regs r43x5[8]<8>;
-	regs r43x6[8]<8>;
+	regfile r43x5[8]<8>;
+	regfile r43x6[8]<8>;
 	sel ch_bytes<16>;
 
 	output v_running;
 	instrin v_start(run_ch);
 	input run_ch<8>;
-	reg_wr rch<3>, v_rch_save<3>;
-	reg_wr v_data<8>, v_trans<2>;
+	reg rch<3>, v_rch_save<3>;
+	reg v_data<8>, v_trans<2>;
 	sel lest_dec_sig<16>;
-	rega v_run_ch[8];
+	regs v_run_ch[8];
 
 	sel temp_PPU<8>, trans<2>;
 	instrself acc_MEM, acc_PPU(trans), v_end;
 
 	instrin h_enable(run_ch);
 	instrin h_init;
-	rega h_ended[8];
-	rega do_transfer[8];
+	regs h_ended[8];
+	regs do_transfer[8];
 	reg_wr fi_h_initialling;
-	rega h_run_en[8];
-	rega h_run_en_tmp[8];
-	rega h_run_ch[8];
+	regs h_run_en[8];
+	regs h_run_en_tmp[8];
+	regs h_run_ch[8];
 	instrin h_start;
 	reg_wr fi_h_transfer, fi_h_nextadrs;
-	regs f_indirect[8];
+	regfile f_indirect[8];
 	sel ch_f_indirect;
-	regs line_count[8]<8>;
+	regfile line_count[8]<8>;
 	sel ch_line_count<8>;
-	regs table_L[8]<8>;
-	regs table_H[8]<8>;
+	regfile table_L[8]<8>;
+	regfile table_H[8]<8>;
 	sel ch_table<16>;
 	sel ch_ind_adrs<16>;
-	regs ind_bank[8]<8>;
+	regfile ind_bank[8]<8>;
 	sel ch_ind_bank<8>;
 
 	reg h_data<8>;
@@ -110,7 +109,7 @@ circuit dma_core
 instrout h_end_all;
 reg_wr h_initialling_reg, h_running_reg;
 
-%d regs_arg definition
+%d regfile_arg definition
 
 	stage_name io_set_stg{ task do(ch, conf, set_D); }
 	stage_name io_get_stg{ task do(ch, conf); }
@@ -123,6 +122,19 @@ reg_wr h_initialling_reg, h_running_reg;
 	stage_name h_nextadrs{ task do(); }
 	stage_name read_wait{ task do(rid_reg); }
 	stage_name v_wdma{ task do(); }
+/*
+	instruct reset_act par{
+		fi_h_initialling := 0b0;
+		fi_h_transfer := 0b0;
+		fi_h_nextadrs := 0b0;
+		par(i=0;i<8;i++){
+			v_run_ch[i]:=0b0; h_run_en[i]:=0b0; h_run_en_tmp[i]:=0b0; h_run_ch[i]:=0b0;
+		}
+	}
+*/
+	instruct halt h_code_reg := h_code;
+	f_halt = halt_code!=0x00;
+	halt_code = h_code_reg;
 
 	v_running = v_run_ch_0 | v_run_ch_1 | v_run_ch_2 | v_run_ch_3 | v_run_ch_4 | v_run_ch_5 | v_run_ch_6 | v_run_ch_7;
 	h_running = fi_h_initialling | fi_h_transfer | fi_h_nextadrs; //h_run_ch_0 | h_run_ch_1 | h_run_ch_2 | h_run_ch_3 | h_run_ch_4 | h_run_ch_5 | h_run_ch_6 | h_run_ch_7;
@@ -173,17 +185,8 @@ if(h_running_reg & ^fi_h_nextadrs) h_end_all();
 
 //if(read_wait.do & write) halt(0x23);
 
-%d regs_instruct definition
-/*
-	instruct reset_act par{
-		fi_h_initialling := 0b0;
-		fi_h_transfer := 0b0;
-		fi_h_nextadrs := 0b0;
-		par(i=0;i<8;i++){
-			v_run_ch[i]:=0b0; h_run_en[i]:=0b0; h_run_en_tmp[i]:=0b0; h_run_ch[i]:=0b0;
-		}
-	}
-*/
+%d regfile_instruct definition
+
 	instruct io_set generate io_set_stg.do(ch_in, conf_in, set_D_in);
 
 	instruct io_get generate io_get_stg.do(ch_in, conf_in);
@@ -272,10 +275,6 @@ if(h_running_reg & ^fi_h_nextadrs) h_end_all();
 			}
 		}
 	}
-
-	instruct halt h_code_reg := h_code;
-	f_halt = halt_code!=0x00;
-	halt_code = h_code_reg;
 
 	instruct read par{
 		read_req();
@@ -584,7 +583,7 @@ if(h_running_reg & ^fi_h_nextadrs) h_end_all();
 	}
 
 	stage h_store {
-		reg_wr h_trans<2>;
+		reg h_trans<2>;
 		first_state st_begin;
 		finish;
 		state st_begin par{

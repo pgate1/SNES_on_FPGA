@@ -28,7 +28,7 @@ circuit ch_dsp
 	input DIR<8>;
 	instrout read_req;
 	output vA<16>;
-	reg_wr vA_reg<16>;
+	reg vA_reg<16>;
 	instrin read_ack;
 	input vD<8>;
 
@@ -40,28 +40,28 @@ circuit ch_dsp
 
 	instrself read(rid_sel, vA_sel);
 	sel rid_sel<3>, vA_sel<16>;
-	reg_wr rid_reg<3>;
+	reg rid_reg<3>;
 
 	reg_wr r_VOL_L<8>, r_VOL_R<8>;
-	reg_wr r_PH<6>, r_PL<8>;
-	reg_wr pitch<14>, pitch_count<15>;
-	reg_wr r_SRCN<8>;
+	reg r_PH<6>, r_PL<8>;
+	reg pitch<14>, pitch_count<15>;
+	reg r_SRCN<8>;
 
 	instrin endx_clear;
 	reg_wr f_endx;
 	output endx;
 
-	reg_wr src_AH<8>, src_AL<8>;
+	reg src_AH<8>, src_AL<8>;
 	instrself adinc;
 
-	reg_wr src_data<8>;
+	reg src_data<8>;
 	reg_ws src_empty, dec_sw;
 
 	instrself decode(nibble);
 	sel nibble<4>;
-	reg_wr range<4>, filter<2>, f_loop, f_end;
+	reg range<4>, filter<2>, f_loop, f_end;
 
-	reg_wr decode_data<16>, pre0_data<16>, pre1_data<16>;
+	reg decode_data<16>, pre0_data<16>, pre1_data<16>;
 
 instrin sw_brrmul_off;
 mul_s16s8 brr_mul0, brr_mul1;
@@ -69,16 +69,16 @@ mul_s16s8 brr_mul0, brr_mul1;
 	instrin sw_dsp_omit;
 
 	reg_wr f_key;
-	reg_wr r_ADSR1<8>, r_ADSR2<8>, r_GAIN<8>;
+	reg r_ADSR1<8>, r_ADSR2<8>, r_GAIN<8>;
 
 	env_gen env;
-	reg_wr decenv_reg<16>;
+	reg decenv_reg<16>;
 
 //	mul_s16u7 env_mul;
 //	mul_s16 env_mul, vol_mul;
 	mul_s16 ev_mul;
 	reg_ws reset;
-	reg_wr mul_sw<3>;
+	reg mul_sw<3>;
 
 	input f_noise, noise<15>;
 
@@ -89,8 +89,8 @@ mul_s16s8 brr_mul0, brr_mul1;
 	dsdac7 ddac;
 	output disp_vold, disp_freq<7>;
 
-	reg_wr interpolate_data<23>; // 16 + 7
-	reg_wr pre0_intpl<16>, pre1_intpl<16>;
+	reg interpolate_data<23>; // 16 + 7
+	reg pre0_intpl<16>, pre1_intpl<16>;
 	instrself pitch_over;
 
 	instrself halt;
@@ -340,7 +340,7 @@ output dbg<8>;
 
 	// 連続key onのために一旦初期状態に戻す
 	stage src_read {
-		reg_wr bk_count<3>;
+		reg bk_count<3>;
 		first_state st_getsl;
 		state st_getsl if((^ready) & f_key & ^read_wait.do){
 			// 開始アドレス下位取得
@@ -438,7 +438,7 @@ output dbg<8>;
 	// アクティブ線形補間
 	// 次の値を超えないようにすること
 	stage interpolate {
-		reg_wr intpl_pitch<24>, intpl_pitch_next<18>;
+		reg intpl_pitch<24>, intpl_pitch_next<18>;
 		sel intpl_wins<3>;
 		bsr_s24 intpl_bsr;
 		first_state st1;

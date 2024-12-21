@@ -1,0 +1,18 @@
+
+// RAM
+// 15 bit 512 depth
+
+circuit ram_15x512
+{
+	input adrs<9>, din<15>;
+	output dout<15>;
+	instrin read(adrs), write(adrs, din);
+
+	mem cells[512]<15>;
+	reg dout_reg<15>;
+
+	instruct write cells[adrs] := din;
+
+	instruct read dout_reg := cells[adrs];
+	dout = dout_reg;
+}

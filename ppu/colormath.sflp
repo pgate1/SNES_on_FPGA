@@ -52,7 +52,12 @@ circuit colormath
 	}
 
 	instruct bright par{
+		sel bn_c<6>;
+		bn_c = (0b0 || col_in) - (0b0 || (^n_brightness) || 0b0);
+	//	if(bn_c<5>) dout = 0b00000; else dout = bn_c<4:0>;
+
 	//	if(n_brightness==0x0) dout = 0b00000; // ‚±‚ê‚Íppu1_core‚Å‚â‚Á‚Ä‚é
+		// æZŠí‚Í’x‰„‚ª‘å‚«‚¢
 		dout = mul_bright.con(col_in, (0b0||n_brightness)+1).dout<8:4>;
 	}
 }

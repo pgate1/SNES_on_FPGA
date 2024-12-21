@@ -12,14 +12,15 @@ circuit snes_core
 	input D_in<8>, ROM_ACK;
 	output BA<8>, A<16>, D_out<8>;
 	output apu_A<2>, apu_Dout<8>;
-	reg_wr apu_A_reg<2>, apu_Dout_reg<8>;
+	reg apu_A_reg<2>, apu_Dout_reg<8>;
 
-	instrout read_rom, write_rom;
+	instrout rom_read, rom_write;
 //	output CSn, RDn, WEn;
 	reg_ws CSn_reg, RDn_reg, WEn_reg;
 
 	// 外部WRAM I/F
 	output WRAM_ADDR<17>, WRAM_Din<8>;
+	reg WRAM_ADDR_reg<17>, WRAM_Din_reg<8>;
 	input WRAM_Dout<8>;
 	instrout WRAM_RD(WRAM_ADDR), WRAM_WE(WRAM_ADDR, WRAM_Din);
 	instrin WRAM_ACK;
@@ -68,24 +69,24 @@ circuit snes_core
 	instrself map_dsp, map_reserve;
 	sel mapped_D_in<8>;
 
-	reg_wr bank_reg<8>, adrs_reg<16>;
-	reg_wr dma_adrs_reg<8>, dma_dout_reg<8>;
-	reg_wr io_reg<8>, open_bus<8>;
-	reg_wr dout_reg<8>;
+	reg bank_reg<8>, adrs_reg<16>;
+	reg dma_adrs_reg<8>, dma_dout_reg<8>;
+	reg io_reg<8>, open_bus<8>;
+	reg dout_reg<8>;
 
-	reg_wr pad1_data<16>, pad2_data<16>;
+	reg pad1_data<16>, pad2_data<16>;
 	reg_ws NMIn_pre;
 
 	instrout mod_apu_write(apu_A, apu_Dout), mod_apu_read(apu_A);
 	instrin mod_apu_ack;
 
 	instrself cowram_access;
-	reg_wr cow_adrsL<8>, cow_adrsH<8>, cow_adrsB;
+	reg cow_adrsL<8>, cow_adrsH<8>, cow_adrsB;
 	sel cow_adrs<17>;
 
 	output cpu_speed<2>;
-	reg_wr dram_refresh_count<3>;
-	reg_wr mpu_mem_acc; // 1:外部アクセス、0:内部演算
+	reg dram_refresh_count<3>;
+	reg mpu_mem_acc; // 1:外部アクセス、0:内部演算
 	instrout dram_refresh_go;
 	output f_overscan; // 0:224 1:240
 
@@ -96,7 +97,7 @@ circuit snes_core
 	reg_wr dbgc<16>;
 reg_wr irq_count<8>, nmi_count<8>;
 //sel maps<12>;
-	input f_hdma_disable;
+	instrin f_hdma_disable;
 
 reg_wr dbg_reg;
 //input dbg_in<4>;
@@ -106,10 +107,10 @@ reg_wr dbg_reg;
 	stage_name hdma_wait { task init(); task start(); }
 	stage_name dma_read_ppu { task do(dma_adrs_reg); }
 	stage_name dma_write_ppu { task do(dma_adrs_reg, dma_dout_reg); }
-	stage_name read_rom_wait { task do(); }
-	stage_name read_wram_wait { task do(); }
-	stage_name read_io_wait { task do(); }
-	stage_name read_dma_wait { task do(); }
+	stage_name rom_read_wait { task do(); }
+	stage_name wram_read_wait { task do(); }
+	stage_name io_read_wait { task do(); }
+	stage_name dma_read_wait { task do(); }
 
 	// 外部VRAM I/F
 	instruct ppu1.vramA_read vramA_read(ppu1.vramA_adrs);
@@ -171,10 +172,10 @@ reg_wr dbg_reg;
 
 	any{
 		map_wram   : mapped_D_in = WRAM_Dout;
-		map_ppu1   : mapped_D_in = ppu1.D_out;
+		map_ppu1   : mapped_D_in = ppu1.io_D_out;
 		map_apu    : mapped_D_in = apu_Din;
 		map_pad    : mapped_D_in = io_reg;
-		map_ppu2   : mapped_D_in = ppu2.D_out;
+		map_ppu2   : mapped_D_in = ppu2.io_D_out;
 		map_rom    : mapped_D_in = D_in;
 		map_dma    : mapped_D_in = dma.get_D;
 		map_cowram : mapped_D_in = WRAM_Dout;
@@ -183,7 +184,7 @@ reg_wr dbg_reg;
 	}
 	mpu.D_in = mapped_D_in;
 
-	if(dma.ppu_to_mem) dma.D_in = ppu1.D_out;
+	if(dma.ppu_to_mem) dma.D_in = ppu1.io_D_out;
 	else               dma.D_in = mapped_D_in;
 
 	D_out = dout_reg;
@@ -211,7 +212,6 @@ reg_wr dbg_reg;
 		}
 	}
 */
-	reg_wr WRAM_ADDR_reg<17>, WRAM_Din_reg<8>;
 	if(WRAM_RD | WRAM_WE) WRAM_ADDR_reg := WRAM_ADDR;
 	else WRAM_ADDR = WRAM_ADDR_reg;
 	if(WRAM_WE) WRAM_Din_reg := WRAM_Din;
@@ -308,10 +308,14 @@ reg_wr dbg_reg;
 	instruct mpu_run par{
 		alt{
 			/|f_halts : ;
-			/|dram_refresh_count : par{
+			dram_refresh_count!=0 : par{
+				// 5→0
 				// 4096回for64msのために２回
-				if(dram_refresh_count==1) dram_refresh_go();
-				if(dram_refresh_count==3) dram_refresh_go();
+				if(dram_refresh_count==4) dram_refresh_go();
+				if(dram_refresh_count==2) dram_refresh_go();
+			//	if(dram_refresh_count==1) dram_refresh_go();
+				// 毎回
+			//	dram_refresh_go();
 				dram_refresh_count--;
 			}
 			dma.running : dma.run();
@@ -387,7 +391,7 @@ reg_wr dbg_reg;
 	}
 
 	instruct ppu2.hdma_enable par{ // $420C write
-		/*if(^f_hdma_disable)*/ dma.h_enable(dout_reg);
+		if(^f_hdma_disable) dma.h_enable(dout_reg);
 	}
 
 	instruct ppu2.hdma_init par{
@@ -447,12 +451,12 @@ reg_wr dbg_reg;
 					// 0b000||adrs<17>
 					// bank $7Fの場合 bank_reg<6>&bank_reg<0>=1 となる
 					WRAM_RD((bank_reg<6>&bank_reg<0>) || adrs_reg);
-					generate read_wram_wait.do();
+					generate wram_read_wait.do();
 				}
 				map_ppu1: par{
 					// スーパーテトリス３の範囲外バーストDMA対策
-					if(^(dma.running & ^dma.ppu_to_mem)) ppu1.read_io(adrs_reg<5:0>);
-					generate read_io_wait.do();
+					if(^(dma.running & ^dma.ppu_to_mem)) ppu1.io_read(adrs_reg<5:0>);
+					generate io_read_wait.do();
 				}
 				map_apu : par{
 					mod_apu_read(adrs_reg<1:0>);
@@ -469,32 +473,32 @@ reg_wr dbg_reg;
 						}
 					//	else : halt(0x43);
 					}
-					generate read_io_wait.do();
+					generate io_read_wait.do();
 				}
 				map_rom : par{
-					read_rom();
+					rom_read();
 					CSn_reg := 0b0;
 					RDn_reg := 0b0;
-					generate read_rom_wait.do();
+					generate rom_read_wait.do();
 				}
 				map_ppu2 : par{
-					ppu2.read_io(adrs_reg<4:0>);
-					generate read_io_wait.do();
+					ppu2.io_read(adrs_reg<4:0>);
+					generate io_read_wait.do();
 				}
 				map_dma : par{
 					if(^(dma.running & ^dma.ppu_to_mem)) dma.io_get(adrs_reg<6:4>, adrs_reg<3:0>);
-					generate read_dma_wait.do();
+					generate dma_read_wait.do();
 				}
 				map_cowram : any{
 					adrs_reg<1:0>==0b00 : par{
 						cowram_access();
 						/*if(^(dma.running & ^dma.ppu_to_mem))*/ WRAM_RD(cow_adrs);
-						generate read_wram_wait.do();
+						generate wram_read_wait.do();
 					}
-					else : generate read_io_wait.do();
+					else : generate io_read_wait.do();
 				}
-				map_dsp : generate read_io_wait.do();
-				map_reserve : generate read_io_wait.do();
+				map_dsp : generate io_read_wait.do();
+				map_reserve : generate io_read_wait.do();
 			//	else : halt(0x44);
 			}
 		}
@@ -515,7 +519,7 @@ reg_wr dbg_reg;
 					WRAM_WE((bank_reg<6>&bank_reg<0>) || adrs_reg, dout_reg);
 				}
 				map_ppu1 : par{
-					ppu1.write_io(adrs_reg<5:0>, dout_reg);
+					ppu1.io_write(adrs_reg<5:0>, dout_reg);
 				}
 				map_apu : par{
 					mod_apu_write(adrs_reg<1:0>, dout_reg);
@@ -530,7 +534,7 @@ reg_wr dbg_reg;
 				//	else : halt(0x53);
 				}
 				map_ppu2 : par{
-					ppu2.write_io(adrs_reg<4:0>, dout_reg);
+					ppu2.io_write(adrs_reg<4:0>, dout_reg);
 				}
 				map_dma : par{
 					dma.io_set(adrs_reg<6:4>, adrs_reg<3:0>, dout_reg);
@@ -545,7 +549,7 @@ reg_wr dbg_reg;
 					adrs_reg<1:0>==0b11 : cow_adrsB := dout_reg<0>;
 				}
 				map_rom : par{
-					write_rom();
+					rom_write();
 					CSn_reg := 0b0;
 					WEn_reg := 0b0;
 				}
@@ -568,8 +572,8 @@ reg_wr dbg_reg;
 
 	stage dma_read_ppu {
 		par{
-			ppu1.read_io(dma_adrs_reg<5:0>);
-			generate read_io_wait.do();
+			ppu1.io_read(dma_adrs_reg<5:0>);
+			generate io_read_wait.do();
 			finish;
 		}
 	}
@@ -577,7 +581,7 @@ reg_wr dbg_reg;
 	stage dma_write_ppu {
 		any{
 			dma_adrs_reg<7:6>==0b00 : par{ // $2100-$213F 0010_0001_00--_----
-				ppu1.write_io(dma_adrs_reg<5:0>, dma_dout_reg);
+				ppu1.io_write(dma_adrs_reg<5:0>, dma_dout_reg);
 			}
 			dma_adrs_reg<7:6>==0b01 : par{ // $2140-$2143 -$217F 0010_0001_01--_----
 				mod_apu_write(dma_adrs_reg<1:0>, dma_dout_reg);
@@ -591,7 +595,7 @@ reg_wr dbg_reg;
 		finish;
 	}
 
-	stage read_rom_wait {
+	stage rom_read_wait {
 		first_state st1;
 		state st1
 /*
@@ -612,7 +616,7 @@ reg_wr dbg_reg;
 		}
 	}
 
-	stage read_wram_wait {
+	stage wram_read_wait {
 #ifdef FPGA
 		if(WRAM_ACK)
 #endif
@@ -622,14 +626,14 @@ reg_wr dbg_reg;
 		}
 	}
 
-	stage read_io_wait {
+	stage io_read_wait {
 		par{
 			read_ack();
 			finish;
 		}
 	}
 
-	stage read_dma_wait {
+	stage dma_read_wait {
 		first_state st1;
 		state st1 goto st2;
 		state st2 par{

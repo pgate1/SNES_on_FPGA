@@ -18,6 +18,7 @@ circuit dsp_core
 	instrin ack;
 
 	output out_L<17>, out_R<17>;
+	reg out_L_reg<17>, out_R_reg<17>;
 	output dbg<8>;
 
 	input mute<8>;
@@ -38,7 +39,7 @@ circuit dsp_core
 
 	reg_wr r_PMON<8>;
 	reg_wr noise_freq_count<11>;
-	reg_wr noise_LFSR<15>;
+	reg noise_LFSR<15>;
 
 	reg_wr key_note<8>;
 	sel AH<4>, AL<4>;
@@ -47,7 +48,7 @@ circuit dsp_core
 //	clip8ch add_clip_echo_L, add_clip_echo_R;
 
 	mul_s16 mul_vol;
-	reg_wr main_mvol_L<16>, main_mvol_R<16>;
+	reg main_mvol_L<16>, main_mvol_R<16>;
 
 	echo_mod echo;
 	reg_wr r_ESA<8>, r_EDL<4>, r_EFB<8>, r_EVOL_L<8>, r_EVOL_R<8>;
@@ -384,7 +385,6 @@ dbg = ch_6.dbg;
 	if(^sw_echo_off) out_add_R = (17#main_mvol_R) + (17#echo.out_R);
 	else out_add_R = 17#main_mvol_R;
 
-	reg_wr out_L_reg<17>, out_R_reg<17>;
 	out_L_reg := out_add_L;
 	out_R_reg := out_add_R;
 /*

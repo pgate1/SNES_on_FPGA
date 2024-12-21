@@ -26,11 +26,11 @@ output dbg<8>;
 	reg_wr f_key_on, f_key_off;
 
 	reg_wr envx<11>;
-	reg_wr count<12>;
+	reg count<12>;
 
-	reg_wr adsr_state<4>;
+	reg adsr_state<4>;
 	sel gen_state<4>;
-	reg_wr tim<16>;
+	reg tim<16>;
 	sel arsel<5>, srsel<5>;
 //	sel artim<12>, drtim<12>, srtim<12>;
 	instrself arinf, srinf;

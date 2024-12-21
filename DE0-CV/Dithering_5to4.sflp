@@ -1,0 +1,46 @@
+/*
+ RGB555からRGB444への2x2のディザリング
+ ドットクロック 25MHz
+*/
+
+circuit Dithering_5to4
+{
+	input col_in<5>;
+	instrin vsync, hsync, dsync;
+	input sw<3>;
+	output col_out<4>;
+
+	reg frame, line, dot;
+
+	// フレームで切り替え
+	instruct vsync par{
+		frame := ^frame;
+		line := 0b0;
+	}
+	// ラインで切り替え
+	instruct hsync if(^vsync){
+		line := ^line;
+		dot := 0b0;
+	}
+	// ドットで切り替え
+	instruct dsync if(^vsync & ^hsync){
+		dot := ^dot;
+	}
+
+	sel lower<4>, col_inc<5>, upper<4>;
+	// 下位1ビットをカット
+	lower = col_in<4:1>;
+	// 1を足す
+	col_inc = (0b0||lower) + 0b0_0001;
+	if(col_inc<4>) upper = 0b1111;
+	else upper = col_inc<3:0>;
+
+	if(col_in<0>){ // 0bxxxx1
+		if(frame @ line @ dot) col_out = upper;
+		else col_out = lower;
+	}
+	else{ // 0bxxxx0
+		col_out = lower;
+	}
+
+}

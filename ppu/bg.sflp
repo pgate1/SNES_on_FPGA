@@ -12,6 +12,8 @@
 
 circuit bg
 {
+	instrin init;
+
 	output A<15>;
 	instrout read_req;
 	input read_ack, D_in<16>;
@@ -42,17 +44,17 @@ output dbg<16>;
 	instrin ofsH_read, ofsV_read;
 	instrself make_ofs_adrs(s_sec);
 	sel s_sec<2>, ofs_tile_adrs<15>;
-	reg_wr ofs_Hval<16>, ofs_Vval<16>;
+	reg ofs_Hval<16>, ofs_Vval<16>;
 	output Hval<16>, Vval<16>;
 	input bg3_Hval<16>, bg3_Vval<16>;
 	instrself fi_ofs_x, fi_ofs_y;
-	reg_wr ofs_x<4>, ofs_y<4>;
+	reg ofs_x<4>, ofs_y<4>;
 
 	// Tile Address
 	instrin tile_read;
 	instrself make_tile_adrs;
 	sel tile_adrs<15>;
-	reg_wr tile_data<16>;
+	reg tile_data<16>;
 
 	// Tile Data
 	sel v_flip, h_flip, pority_z, palette<3>, chr_id<10>;
@@ -64,14 +66,14 @@ output dbg<16>;
 	get_patadrs get_pat_adrs;
 
 	// Pattern Data
-	reg_wr pat_t0<8>, pat_t1<8>, pat_t2<8>, pat_t3<8>,
-	       pat_t4<8>, pat_t5<8>, pat_t6<8>, pat_t7<8>;
-	reg_wr pat_d0<8>, pat_d1<8>, pat_d2<8>, pat_d3<8>,
-	       pat_d4<8>, pat_d5<8>, pat_d6<8>, pat_d7<8>;
-	reg_wr pat_i0<8>, pat_i1<8>, pat_i2<8>, pat_i3<8>,
-	       pat_i4<8>, pat_i5<8>, pat_i6<8>, pat_i7<8>;
-	reg_wr priority_t, priority_d;
-	reg_wr palette_t<3>, palette_d<3>;
+	reg pat_t0<8>, pat_t1<8>, pat_t2<8>, pat_t3<8>,
+	    pat_t4<8>, pat_t5<8>, pat_t6<8>, pat_t7<8>;
+	reg pat_d0<8>, pat_d1<8>, pat_d2<8>, pat_d3<8>,
+	    pat_d4<8>, pat_d5<8>, pat_d6<8>, pat_d7<8>;
+	reg pat_i0<8>, pat_i1<8>, pat_i2<8>, pat_i3<8>,
+	    pat_i4<8>, pat_i5<8>, pat_i6<8>, pat_i7<8>;
+	reg priority_t, priority_d;
+	reg palette_t<3>, palette_d<3>;
 	bits bits0, bits1, bits2, bits3,
 	     bits4, bits5, bits6, bits7;
 
@@ -79,13 +81,13 @@ output dbg<16>;
 	sel col_palette<3>, col_id_t<8>;
 	instrself pat_shift;
 
-	reg_wr mos_x_count<4>, mos_col_id<8>;
-	reg_wr mos_y_count<4>;
+	reg mos_x_count<4>, mos_col_id<8>;
+	reg mos_y_count<4>;
 	instrin mos_reset;
 
 	// BG mode 5,6 H512
 	instrself make_col_sub;
-	reg_wr pat_s0<8>, pat_s1<8>, pat_s2<8>, pat_s3<8>;
+	reg pat_s0<8>, pat_s1<8>, pat_s2<8>, pat_s3<8>;
 
 reg_wr dbg_reg<16>;
 
@@ -103,6 +105,11 @@ reg_wr dbg_reg<16>;
 	Vval = ofs_Vval;
 
 dbg = dbg_reg;
+
+	instruct init par{
+	//	ofs_Hval := 0x0000;
+	//	ofs_Vval := 0x0000;
+	}
 
 	instruct hsync par{
 		mos_x_count := 0x0;

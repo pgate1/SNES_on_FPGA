@@ -1,7 +1,7 @@
 
 %i "get_patadrs.h"
 %i "bits.h"
-%i "oam_s.h"
+%i "oa_mem.h"
 
 %d VM_PAT01 0b00
 %d VM_PAT23 0b01
@@ -20,7 +20,7 @@ circuit obj_core
 	output D_out<16>;
 
 	instrin fetch, hsync;
-	reg_wr hsync_reg;
+	reg hsync_reg;
 	instrin vblank_begin, vblank_end;
 
 	instrin oam_read(oam_A), oam_write(oam_A, oam_D);
@@ -30,11 +30,11 @@ circuit obj_core
 	output col_pri<2>, col_enable, col_id<8>;
 
 	output time_over, range_over;
-	reg_wr f_time_over, f_range_over;
+	reg f_time_over, f_range_over;
 
 output dbg<16>;
 
-	oam_s oam;
+	oa_mem oam;
 
 	reg_wr halt_reg;
 	instrself halt;
@@ -47,11 +47,11 @@ output dbg<16>;
 
 	mem spr_x_mem[32]<8>, spr_y_mem[32]<8>;
 	mem ca_mem[32]<16>, sign_mem[32], size_mem[32];
-	reg_wr obj_num<6>;
+	reg obj_num<6>;
 
 	instrself read(rid, A, flp_h);
 	sel rid<2>, flp_h;
-	reg_wr rid_reg<2>, flp_h_reg;
+	reg rid_reg<2>, flp_h_reg;
 
 	bits bits0, bits1, bits2, bits3;
 	instrself make_pat_adrs(pat_sel);
@@ -59,41 +59,47 @@ output dbg<16>;
 	get_patadrs get_pat_adrs;
 
 	// Fetch
-	reg_wr fetch_id<5>;
+	reg fetch_id<5>;
 	sel chr_x<8>, chr_y<8>, chr_data<16>;
 	sel v_flip, h_flip, pority<2>, palette<3>, chr_id<9>;
 	sel chr_size, chr_sign;
 	instrself x_non_disp;
-	reg_wr inp_index<3>;
+	reg inp_index<3>;
 	sel inp<3>;
-	reg_wr buf_id<6>;
+	reg buf_id<6>;
 
 	// view
-	rega spr_buf_x[34]<9>;
-//	rega spr_buf_pri[34]<2>;
-	mem spr_buf_pri[34]<2>;
-//	rega spr_buf_pal[34]<3>;
-	mem spr_buf_pal[34]<3>;
-	rega spr_buf_pat0[34]<8>;
-	rega spr_buf_pat1[34]<8>;
-	rega spr_buf_pat2[34]<8>;
-	rega spr_buf_pat3[34]<8>;
+	regs spr_buf_x[34]<9>;
+	regs spr_buf_pri[34]<2>;
+	regs spr_buf_pal[34]<3>;
+	regs spr_buf_pat0[34]<8>;
+	regs spr_buf_pat1[34]<8>;
+	regs spr_buf_pat2[34]<8>;
+	regs spr_buf_pat3[34]<8>;
+
+//	mem spr_buf_x[34]<9>;
+//	mem spr_buf_pri[34]<2>;
+//	mem spr_buf_pal[34]<3>;
+//	mem spr_buf_pat0[34]<8>;
+//	mem spr_buf_pat1[34]<8>;
+//	mem spr_buf_pat2[34]<8>;
+//	mem spr_buf_pat3[34]<8>;
 
 	instrself xpos_down, pat_shift, make_col;
 
-	sela col_low[34]<4>;
+	sels col_low[34]<4>;
 
 	// 描画されるべきスプライト選択 深さ最小優先版の宣言
-	sela calt_0[34]<6>;
-	sela clen_0[34];
-	sela calt_1[17]<6>;
-	sela clen_1[17];
-	sela calt_2[8]<6>;
-	sela clen_2[8];
-	sela calt_3[4]<6>;
-	sela clen_3[4];
-	sela calt_4[2]<6>;
-	sela clen_4[2];
+	sels calt_0[34]<6>;
+	sels clen_0[34];
+	sels calt_1[17]<6>;
+	sels clen_1[17];
+	sels calt_2[8]<6>;
+	sels clen_2[8];
+	sels calt_3[4]<6>;
+	sels clen_3[4];
+	sels calt_4[2]<6>;
+	sels clen_4[2];
 	sel calt_5<6>, clen_5;
 	sel calt_6<6>, clen_6;
 
@@ -298,10 +304,10 @@ output dbg<16>;
 		any{ clen_5 : calt_6 = calt_5; else : calt_6 = calt_1_10; } clen_6 = clen_5 | clen_1_10;
 		sel col_high<3>, col_low<4>;
 		any(i=0;i<34;i++){
-			calt_6==i : col_low=col_low[i];
+			calt_6==i : par{ col_low = col_low[i]; col_pri = spr_buf_pri[i]; col_high = spr_buf_pal[i]; }
 		}
-		col_pri = spr_buf_pri[calt_6];
-		col_high = spr_buf_pal[calt_6];
+	//	col_pri = spr_buf_pri[calt_6];
+	//	col_high = spr_buf_pal[calt_6];
 		col_enable = clen_6;
 		col_id = 0b1 || col_high || col_low;
 
@@ -366,7 +372,7 @@ output dbg<16>;
 	// OBJ次のscanlineに表示するOBJの検索
 	stage OBJ_SEARCH {
 		sel priority_base<7>, obj_slct<5>;
-		reg_wr search_id<7>;
+		reg search_id<7>;
 		first_state sst;
 
 		par{
@@ -421,7 +427,7 @@ output dbg<16>;
 	// clk 1
 	stage OBJ_FETCH {
 		sel w_num<3>;
-		reg_wr fetch_time<6>;
+		reg fetch_time<6>;
 		instrself pat_pos_init, pat_pos_next;
 		first_state sst;
 		finish;
@@ -440,8 +446,11 @@ output dbg<16>;
 			make_pat_adrs(0b0);
 			read(VM_PAT01, pat_adrs, h_flip);
 
-			spr_buf_pri[buf_id] := pority;
-			spr_buf_pal[buf_id] := palette;
+			any(i=0;i<34;i++){
+				buf_id==i : par{ spr_buf_pri[i] := pority; spr_buf_pal[i] := palette; }
+			}
+		//	spr_buf_pri[buf_id] := pority;
+		//	spr_buf_pal[buf_id] := palette;
 
 			goto read2;
 		}
@@ -526,7 +535,7 @@ output dbg<16>;
 
 	stage read_wait {
 		sel fetch_pat0<8>, fetch_pat1<8>, fetch_pat2<8>, fetch_pat3<8>;
-		reg_wr fetch_pat_valid;
+		reg fetch_pat_valid;
 		if(read_ack){
 			any{
 				rid_reg==VM_PAT01 : par{
