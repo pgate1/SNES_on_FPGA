@@ -9,8 +9,9 @@ circuit cg_mem
 
 	ram_15x256 ram0;
 	reg A_reg<8>, din_tmp<8>;
-	reg f_tmp;
-	reg get_ack, read_ack, dout_reg<15>;
+	reg_ws f_tmp;
+	reg_wr get_ack, read_ack;
+	reg dout_reg<15>;
 
 	any{
 		get_ack : par{

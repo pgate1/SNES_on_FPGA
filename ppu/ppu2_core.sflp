@@ -35,7 +35,7 @@ output dbg<16>;
 
 	reg_wr f_NMI_enable, f_joypad_auto, key_reading;
 	instrout key_polling;
-	reg scanline<9>, scanline_tmp<9>;
+	reg_wr scanline<9>, scanline_tmp<9>;
 
 	instrout hdma_enable, hdma_init;
 
@@ -50,7 +50,7 @@ output dbg<16>;
 //	reg_wr r4210<8>;
 	reg r4213<8>; // ‰Šú’l 0xFF
 
-	reg scanpixel<9>;
+	reg_wr scanpixel<9>;
 	sel timer_v_count<9>, timer_h_count<9>;
 
 reg_wr ready_rnd<6>;

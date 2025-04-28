@@ -1,0 +1,29 @@
+/*
+ 50MHzから1.024MHzを生成する
+ カウンタ 13bit、加算値 64、最大値 3125、誤差 0.0000000000
+*/
+
+%d COUNT_WIDTH 13
+
+circuit DDS_50to1024000
+{
+	instrout run;
+
+	sel add<COUNT_WIDTH>;
+	sel max<COUNT_WIDTH>;
+	reg_wr count<COUNT_WIDTH>;
+	sel sa<COUNT_WIDTH>;
+
+	add = 64;
+	max = 3125;
+
+	sa = count - max;
+
+	if(sa<COUNT_WIDTH-1>){ // count < max
+		count += add;
+	}
+	else{
+		count := sa + add;
+		run();
+	}
+}

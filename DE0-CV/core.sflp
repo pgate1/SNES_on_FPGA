@@ -83,9 +83,6 @@ circuit core
 //	DDS_50to5369318 dds_ppu;
 	instrself dds_ppu_run;
 
-	reg_wr checksum<8>;
-	reg_wr dbg_reg<8>;
-
 	// APU
 	apu_core apu;
 	ram_8x64k apu_wram;
@@ -97,7 +94,9 @@ circuit core
 	mem keys[256]; // 使用は127まで
 
 	vjtag_uart vjtag;
-	reg_wr f_reading_rom, f_reading_spc;
+
+	reg_wr checksum<8>;
+	reg_wr dbg_reg<8>;
 
 	instrself halt(h_code);
 	sel h_code<8>;
@@ -229,14 +228,14 @@ circuit core
 		dither_B.dsync();
 	}
 
-	reg_wr tas_key<12>;
+	reg_wr tas_key<12>, pad_data<12>;
 	// SNESPAD<12> : BYｾﾚｽﾀ ↑↓←→ AXLR
 	snes.pad1P =
 		(keys[0x22] || keys[0x1B] || keys[0x29] || keys[0x5A] || 
 		 keys[0x75] || keys[0x72] || keys[0x6B] || keys[0x74] || 
 		 keys[0x23] || keys[0x24] || keys[0x2D] || keys[0x2C])
 		| (btn_0||0b0||btn_3||btn_1||0b0000||btn_2||0b000)
-		| tas_key;
+		| tas_key | pad_data;
 	snes.pad2P = /*SW<8>*/0b0 || 0b00000000000; // for RockmanX2 testmode
 
 //	snes.speed = usb.button1<12>;//pad.data_ref<0>;
@@ -255,7 +254,8 @@ circuit core
 		else : LEDR = 
 			(0b00|| 
 			apu.disp_vold<0> || apu.disp_vold<1> || apu.disp_vold<2> || apu.disp_vold<3> ||
-			apu.disp_vold<4> || apu.disp_vold<5> || apu.disp_vold<6> || apu.disp_vold<7>);
+			apu.disp_vold<4> || apu.disp_vold<5> || apu.disp_vold<6> || apu.disp_vold<7>)
+			| snes.pad1P<11:2>;
 	}
 
 	any{
@@ -310,7 +310,7 @@ circuit core
 	reg_wr aram_read_ack_wait, aram_write_ack_wait;
 
 	instruct cart.rom_read par{
-		sdram.read(0b000||cart.rom_adrs);
+		sdram.read(0b000 || cart.rom_adrs);
 		rom_read_ack_wait := 0b1;
 	}
 	if(rom_read_ack_wait & sdram.ack){
@@ -322,7 +322,7 @@ circuit core
 	instruct snes.rom_write cart.write();
 
 	instruct cart.sram_read par{
-		sdram.read(0b11000000||cart.sram_adrs);
+		sdram.read(0b11000000 || cart.sram_adrs);
 		sram_read_ack_wait := 0b1;
 	}
 	if(sram_read_ack_wait & sdram.ack){
@@ -333,7 +333,7 @@ circuit core
 
 	cart.Din = snes.D_out;
 	instruct cart.sram_write par{
-		sdram.write(0b11000000||cart.sram_adrs, snes.D_out);
+		sdram.write(0b11000000 || cart.sram_adrs, snes.D_out);
 	}
 
 	instruct snes.WRAM_RD par{
@@ -447,14 +447,30 @@ circuit core
 		generate snes_line.do();
 	}
 
+	reg_wr f_reading_rom, f_reading_spc, f_reading_pad;
+
 	instruct vjtag.recv par{
+		// R(ROM), S(SPC), P(Pad)
 		any{
-			(^f_reading_rom) & (^f_reading_spc) : par{
-				if(vjtag.recv_data==0x00) f_reading_rom := 0b1;
-				else f_reading_spc := 0b1;
+			(^f_reading_rom) & (^f_reading_spc) & (^f_reading_pad) : par{
+				if(vjtag.recv_data=='R') f_reading_rom := 0b1;
+				if(vjtag.recv_data=='S') f_reading_spc := 0b1;
+				if(vjtag.recv_data=='P') f_reading_pad := 0b1;
 			}
 			f_reading_rom : generate vjtag2ram_rom.do();
 			f_reading_spc : generate vjtag2ram_spc.do();
+			f_reading_pad : par{
+				reg_wr st_pad;
+				if(st_pad==0b0){
+					pad_data := 0x0 || vjtag.recv_data;
+					st_pad := 0b1;
+				}
+				if(st_pad==0b1){
+					pad_data := vjtag.recv_data<3:0> || pad_data<7:0>;
+					st_pad := 0b0;
+					f_reading_pad := 0b0;
+				}
+			}
 		}
 	}
 
@@ -520,7 +536,7 @@ circuit core
 		state st1 if(fat.ack){// & ^sdram_clean.do){
 			rom_read_ok := 0b0;
 			spc_read_ok := 0b0;
-			fat.fopen(0x0||SW<3:0>);
+			fat.fopen(0x0 || SW<3:0>);
 			goto st2;
 		}
 		state st2 if(fat.ack){
@@ -550,9 +566,7 @@ circuit core
 			}
 
 			if(fat.eof) goto st5;
-			else{
-				checksum += fat.fdata;
-			}
+			else checksum += fat.fdata;
 		}
 		state st5 if(fat.ack){ // Read save data.
 			fat.fopen((0x0||SW<3:0>)+1);
@@ -608,6 +622,7 @@ circuit core
 				cart.set_rom_type_8MB();
 				goto st3;
 			}
+
 			if(pA<23:0>==(rom_size-1)) goto st3;
 		}
 		state st3 par{
@@ -754,13 +769,12 @@ circuit core
 			}
 			else pA++;
 		}
-		state st_memw if(fat.ack){// & sram.ack){
+		state st_memw if(fat.ack){
 			fat.read();
 			// WRAMを0x10000(65536)バイトコピー
 			// 0x00F0 - 0x00FF
 			if(pA<15:4>==0x00F) apu.set_play(0xF || pA<3:0>, fat.fdata);
 			// 0x0000 - 0xFFFF
-		//	sram.write(0x0||pA<15:0>, 0x00||fat.fdata, 0b01);
 			apu_wram.write(pA<15:0>, fat.fdata);
 			pA++;
 			if(/&pA<15:0>) goto st_dspw;
@@ -769,12 +783,13 @@ circuit core
 			fat.read();
 			// DSPレジスタなど128バイトコピー
 			// 0x00 - 0x7F
-			apu.set_play(0b0||pA<6:0>, fat.fdata);
+			apu.set_play(0b0 || pA<6:0>, fat.fdata);
 			pA++;
 			if(/&pA<6:0>) goto st_end;
 		}
 		state st_end par{
 			spc_read_ok := 0b1;
+			goto st_open;
 			finish;
 		}
 	}

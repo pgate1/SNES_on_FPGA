@@ -1,0 +1,24 @@
+
+UARTclr.exe
+
+1. Connect to Tang Console and write FPGA data.
+
+2. Drag and drop SNES rom file.
+
+3. (if exist) Drag and drop Save file.
+
+4. Push "Send!" and wait a moment.
+
+5. Key input to play.
+
+   SNES   Key
+  --------------
+   Start   X
+   Select  Z
+   A       D
+   B       W
+   X       E
+   Y       S
+   L       R
+   R       T
+

@@ -1,0 +1,128 @@
+
+%i "../mem/ram_8x32k.h"
+%i "ppu1_core.h"
+%i "ppu2_core.h"
+
+circuit ppu_top
+{
+
+	// ŠO•”VRAM I/F
+	output VRAM_ADDR<15>, VRAM_Din<8>;
+	input VRAM_Dout<16>, VRAM_ACK;
+	instrout VRAM_RD, VRAM_WE;
+
+	output f_cpu_speed;
+
+	instrout VIDEO_enable;
+	output cR<5>, cG<5>, cB<5>;
+
+output dbg<16>;
+
+	ram_8x32k vramA, vramB;
+	ppu1_core ppu1;
+	ppu2_core ppu2;
+
+	instrself ppu_run;
+	instrself hsync;
+	reg snes_timing<9>;
+	reg hsync_timing<9>;
+
+	stage_name snes_line { task do(); }
+
+	par{
+		generate snes_line.do();
+
+		// ŠO•”VRAM I/F
+// mode7–¢‘Î‰ž
+		VRAM_ADDR = ppu1.vramA_adrs;
+		instruct ppu1.vramA_read VRAM_RD();
+		ppu1.vramA_ack = VRAM_ACK;
+		ppu1.vramA_dout = VRAM_Dout<7:0>;
+		ppu1.vramB_ack = VRAM_ACK;
+		ppu1.vramB_dout = VRAM_Dout<15:8>;
+
+/*
+		// VRAM I/F
+		reg_wr vramA_ack;
+		instruct ppu1.vramA_read par{
+			vramA.read(ppu1.vramA_adrs);
+			vramA_ack := 0b1;
+		}
+		ppu1.vramA_ack = vramA_ack;
+		if(vramA_ack) vramA_ack := 0b0;
+		instruct ppu1.vramA_write vramA.write(ppu1.vramA_adrs, ppu1.vramA_din);
+		ppu1.vramA_dout = vramA.dout;
+		reg_wr vramB_ack;
+		instruct ppu1.vramB_read par{
+			vramB.read(ppu1.vramB_adrs);
+			vramB_ack := 0b1;
+		}
+		ppu1.vramB_ack = vramB_ack;
+		if(vramB_ack) vramB_ack := 0b0;
+		instruct ppu1.vramB_write vramB.write(ppu1.vramB_adrs, ppu1.vramB_din);
+		ppu1.vramB_dout = vramB.dout;
+*/
+
+		ppu1.scanline = ppu2.scanline_out;
+		ppu1.vblank = ppu2.vblank_out;
+		ppu1.hblank = ppu2.hblank_out;
+		ppu2.f_overscan = ppu1.f_overscan;
+		ppu1.f_latched_count_en = ppu2.latched_count_en;
+		ppu1.open_bus = 0x00;
+		ppu2.open_bus = 0x00;
+
+		f_cpu_speed = ppu2.f_cpu_speed;
+
+		cR = ppu1.R;
+		cG = ppu1.G;
+		cB = ppu1.B;
+
+dbg = ppu1.dbg;
+	}
+
+	instruct ppu2.vblank_end ppu1.vblank_end();
+	instruct ppu2.dram_refresh;
+
+	instruct ppu_run par{
+		ppu1.draw();
+		ppu2.scan();
+	}
+
+	// PPU ŠO•”“ü—Í
+	instruct hsync par{
+		ppu1.hsync();
+		ppu2.hsync();
+	}
+
+	instruct ppu2.vblank_end ppu1.vblank_end();
+	instruct ppu2.hv_count_latch ppu1.hv_count_latch();
+
+	instruct ppu1.VIDEO_enable VIDEO_enable();
+
+	stage snes_line {
+		first_state st1;
+		state st1 par{
+			hsync_timing := 340;//0b101010100;
+			snes_timing := 0b000000001;
+			goto st2;
+		}
+		state st2 par{
+			if(snes_timing<2>){ // sim
+//			if(snes_timing<2>){ // mode7 sim
+//			if(snes_timing<8>){ // fpga
+				ppu_run();
+				if(hsync_timing==0){
+					hsync();
+					goto st1;
+					finish;
+				}
+				hsync_timing--;
+			}
+
+			snes_timing := snes_timing<7:0> || snes_timing<2>; // sim
+//			snes_timing := snes_timing<7:0> || snes_timing<2>; // mode7 sim
+//			snes_timing := snes_timing<7:0> || snes_timing<8>; // fpga
+		}
+	}
+
+}
