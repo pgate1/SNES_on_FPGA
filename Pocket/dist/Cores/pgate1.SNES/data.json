@@ -1,0 +1,28 @@
+{
+    "data": {
+        "magic": "APF_VER_1",
+        "data_slots": [
+				{
+					"name": "ROM",
+					"id": "0x00",
+					"required": true,
+					"parameters": "0x008",
+					"deferload": true,
+					"extensions": ["sfc", "smc"],
+					"size_maximum": "0x00800000",
+					"address": "0x01000000"
+				},
+				{
+					"name": "SAVE",
+					"id": "0x10",
+					"required": false,
+					"parameters": "0x00C",
+					"nonvolatile": true,
+					"deferload": true,
+					"extensions": ["srm"],
+					"size_maximum": "0x00020000",
+					"address": "0x08000000"
+				}
+		]
+    }
+}

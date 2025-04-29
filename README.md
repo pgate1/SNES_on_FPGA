@@ -7,13 +7,25 @@ The hardware discription language is original expanded SFL+.
 FPGA data is available at:  
 https://pgate1.at-ninja.jp/SNES_on_FPGA/index.html#release
 
-<table><tr>
+<table>
+<tr>
 <td>
 feat. DE2-115
-<img width=500 src=https://pgate1.at-ninja.jp/SNES_on_FPGA/DE2-115_20150627.jpg>
+<img width=500 src=https://pgate1.at-ninja.jp/SNES_on_FPGA/release/DE2-115_20150627.jpg>
 </td>
 <td>
 feat. DE0-CV
-<img width=500 src=https://pgate1.at-ninja.jp/SNES_on_FPGA/DE0-CV_20170802.jpg>
+<img width=500 src=https://pgate1.at-ninja.jp/SNES_on_FPGA/release/DE0-CV_20170802.jpg>
 </td>
-</tr></table>
+</tr>
+<tr>
+<td>
+feat. Pocket
+<img width=500 src=https://pgate1.at-ninja.jp/SNES_on_FPGA/release/Pocket_20250320.jpg>
+</td>
+<td>
+feat. TangConsole138K
+<img width=500 src=https://pgate1.at-ninja.jp/SNES_on_FPGA/release/TangConsole_20250426.jpg>
+</td>
+</tr>
+</table>

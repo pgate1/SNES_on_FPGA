@@ -1,0 +1,42 @@
+
+SNES on FPGA feat. Analogue Pocket
+
+
+This is a port of the basic functions of the SNES(SFC) to Analogue Pocket.
+
+
+* Using core.
+
+1. Put the "Assets", "Cores" and "Platforms" in the dist on the SD card.
+
+2. Put the rom.snes(.smc or .sfc) in the Assets/snes/common.
+
+   Assets
+      snes
+         common
+            rom.smc
+   Cores
+      pgate1.SNES
+         bitstream.rbf_r
+         *.json
+   Platforms
+      _images
+         snes.bin
+      snes.json
+
+3. OK. Insert the SD card into the Pocket, turn it on, and select SNES from openFPGA.
+
+4. There are three choices from the file browser.
+
+   If you choose rom.snes, the game will launch.
+
+5. Have fun until your Pocket's battery runs out.
+
+
+
+* What to do when it doesn't work.
+
+This is an unsupported SNES mapper.
+
+
+2025/03/20 pgate1
