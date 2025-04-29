@@ -1,12 +1,12 @@
-Fitter Status : Successful - Sat Dec 21 11:46:56 2024
+Fitter Status : Successful - Tue Apr 29 00:10:59 2025
 Quartus Prime Version : 18.1.1 Build 646 04/11/2019 Patches 1.18std SJ Lite Edition
 Revision Name : SNES
 Top-level Entity Name : SNES_top
 Family : Cyclone V
 Device : 5CEBA4F23C7
 Timing Models : Final
-Logic utilization (in ALMs) : 11,884 / 18,480 ( 64 % )
-Total registers : 10493
+Logic utilization (in ALMs) : 11,940 / 18,480 ( 65 % )
+Total registers : 10500
 Total pins : 206 / 224 ( 92 % )
 Total virtual pins : 0
 Total block memory bits : 2,129,664 / 3,153,920 ( 68 % )

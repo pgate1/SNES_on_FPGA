@@ -3,18 +3,20 @@ SNES on FPGA feat. Analogue Pocket
 
 
 This is a port of the basic functions of the SNES(SFC) to Analogue Pocket.
+This will allow you to load save files, but you will not be able to save yet.
 
 
 * Using core.
 
 1. Put the "Assets", "Cores" and "Platforms" in the dist on the SD card.
 
-2. Put the rom.snes(.smc or .sfc) in the Assets/snes/common.
+2. Put the rom.snes(.sfc or .smc) in the Assets/snes/common.
 
    Assets
       snes
          common
-            rom.smc
+            rom.sfc
+            rom.srm (If you have a save file)
    Cores
       pgate1.SNES
          bitstream.rbf_r

@@ -400,20 +400,20 @@ circuit core
 	// 1.024MHz
 	instruct dds_apu.run par{
 		// SPC700 core
-		if(rom_read_ok | spc_read_ok) apu.spc_run();
+		if(^apu.ready) apu.spc_run();
 
 		// APUタイマ 64kHz
 		reg_wr timer_timing<4>;
 		timer_timing++;
 		if(/&timer_timing){ // 16分周
-			if(rom_read_ok | spc_read_ok) apu.timer_run();
+			if(^apu.ready) apu.timer_run();
 		}
 
 		// DSP 128kHz (32kHz×4)
 		reg_wr dsp_timing<3>;
 		dsp_timing++;
 		if(/&dsp_timing){ // 8分周
-			if(rom_read_ok | spc_read_ok) apu.dsp_run();
+			if(^apu.ready) apu.dsp_run();
 		}
 	}
 
@@ -447,6 +447,20 @@ circuit core
 		generate snes_line.do();
 	}
 
+	reg_wr mpu_timing<3>;
+	if(rom_read_ok & dds_cpu.run){
+		if(
+		//	((snes.cpu_speed==3) & (mpu_timing==2)) | // 5.36931750MHz sw_dma_serial有効時のみ
+			((snes.cpu_speed==2) & (mpu_timing==3)) | // 3.57954500MHz
+			((snes.cpu_speed==1) & (mpu_timing==4)) | // 2.68465875MHz
+			((snes.cpu_speed==0) & (mpu_timing==6))   // 1.78977250MHz
+		){
+			snes.mpu_run();
+			mpu_timing := 1;
+		}
+		else mpu_timing++;
+	}
+
 	reg_wr f_reading_rom, f_reading_spc, f_reading_pad;
 
 	instruct vjtag.recv par{
@@ -472,22 +486,6 @@ circuit core
 				}
 			}
 		}
-	}
-
-	// クロノOP ちらつかない（HDMAのクロック削減が寄与）
-	reg_wr mpu_timing<3>;
-//if(mpu_timing==7) halt(0x63);
-	if(rom_read_ok & dds_cpu.run){
-		if(
-		//	((snes.cpu_speed==3) & (mpu_timing==2)) | // 5.36931750MHz sw_dma_serial有効時のみ
-			((snes.cpu_speed==2) & (mpu_timing==3)) | // 3.57954500MHz
-			((snes.cpu_speed==1) & (mpu_timing==4)) | // 2.68465875MHz
-			((snes.cpu_speed==0) & (mpu_timing==6))   // 1.78977250MHz
-		){
-			snes.mpu_run();
-			mpu_timing := 1;
-		}
-		else mpu_timing++;
 	}
 
 	stage snes_line {
@@ -532,25 +530,26 @@ circuit core
 	}
 
 	stage card2ram_rom {
-		first_state st1;
-		state st1 if(fat.ack){// & ^sdram_clean.do){
+		first_state st_init;
+		state st_init if(fat.ack){// & ^sdram_clean.do){
 			rom_read_ok := 0b0;
 			spc_read_ok := 0b0;
 			fat.fopen(0x0 || SW<3:0>);
-			goto st2;
+			goto st_init2;
 		}
-		state st2 if(fat.ack){
+		state st_init2 if(fat.ack){
 			snes.soft_reset();
 			apu.soft_reset();
 			cart.init();
 			fat.read();
 			pA := 0;
-			goto strw;
+			goto st_rrw;
 		}
-		state strw if(fat.ack & sdram.ack){
+		state st_rrw if(fat.ack & sdram.ack){
+
 			if((pA==0) & (fat.fdata=='S')){ // SPC
 				generate card2ram_spc.do();
-				goto st1;
+				goto st_init;
 				finish;
 			}
 
@@ -560,79 +559,104 @@ circuit core
 			pA++;
 			fat.read();
 
-			if(pA==(0b00||0x7FFFFF)){
+			if(/&pA<22:0>){
 				cart.set_rom_type_8MB();
-				goto st8;
+				goto st_end;
 			}
 
-			if(fat.eof) goto st5;
+			if(fat.eof) goto st_s1;
 			else checksum += fat.fdata;
 		}
-		state st5 if(fat.ack){ // Read save data.
+
+		state st_s1 if(fat.ack){ // Read save data.
 			fat.fopen((0x0||SW<3:0>)+1);
-			pA := 0b11000000000000000000000000;
-			goto st6;
+			pA := 0;
+			goto st_s2;
 		}
-		state st6 if(fat.ack){
+		state st_s2 if(fat.ack){
 			fat.read();
-			goto st7;
+			goto st_srw;
 		}
-		state st7 if(fat.ack & sdram.ack){
-			sdram.write(pA, fat.fdata);
+		state st_srw if(fat.ack & sdram.ack){
+			// 256kB
+			sdram.write(0b11000000 || pA<17:0>, fat.fdata);
 			pA++;
 			fat.read();
-			if(/&pA<17:0>) goto st8;
+			if(/&pA<17:0>) goto st_end;
 		}
-		state st8 par{
+
+		state st_end par{
 			generate mem_clean.do();
 			finish;
 		}
 	}
 
 	stage vjtag2ram_rom {
-		reg rom_size<24>;
-		first_state st1;
+		reg recv_size<24>;
+		first_state st_init;
 		finish;
-		state st1 par{
+		state st_init par{
 			rom_read_ok := 0b0;
 			spc_read_ok := 0b0;
-			rom_size := rom_size<23:8> || vjtag.recv_data;
+			recv_size := recv_size<23:8> || vjtag.recv_data;
 		//	cart.set_rom_type(0);
-			goto st1_2;
+			goto st_rs2;
 		}
-		state st1_2 par{
+		state st_rs2 par{
 			snes.soft_reset();
 			apu.soft_reset();
 			cart.init();
-			rom_size := rom_size<23:16> || vjtag.recv_data || rom_size<7:0>;
-			goto st1_3;
+			recv_size := recv_size<23:16> || vjtag.recv_data || recv_size<7:0>;
+			goto st_rs3;
 		}
-		state st1_3 par{
-			rom_size := vjtag.recv_data || rom_size<15:0>;
+		state st_rs3 par{
+			recv_size := vjtag.recv_data || recv_size<15:0>;
 			pA := 0;
-			goto strw;
+			goto st_rrecv;
 		}
-		state strw if(sdram.ack){
+		state st_rrecv if(sdram.ack){
 			sdram.write(pA, vjtag.recv_data);
 			if((pA&(0b11||0xFFFFE0))==0b00||0x007FC0) cart.check(0b0, pA<4:0>, vjtag.recv_data);
 			if((pA&(0b11||0xFFFFE0))==0b00||0x00FFC0) cart.check(0b1, pA<4:0>, vjtag.recv_data);
 			pA++;
 
-			if(pA==(0b00||0x7FFFFF)){
+			if(/&pA<22:0>){
 				cart.set_rom_type_8MB();
-				goto st3;
+				goto st_ss1;
 			}
 
-			if(pA<23:0>==(rom_size-1)) goto st3;
+			if(pA<22:0>==(recv_size-1)<22:0>) goto st_ss1;
 		}
-		state st3 par{
+
+		state st_ss1 par{ // Receive save data.
+			recv_size := recv_size<23:8> || vjtag.recv_data;
+			goto st_ss2;
+		}
+		state st_ss2 par{
+			recv_size := recv_size<23:16> || vjtag.recv_data || recv_size<7:0>;
+			goto st_ss3;
+		}
+		state st_ss3 par{
+			recv_size := vjtag.recv_data || recv_size<15:0>;
+			pA := 0;
+			goto st_srecv;
+		}
+		state st_srecv if(sdram.ack){
+			// max 256kB
+			sdram.write(0b11000000 || pA<17:0>, vjtag.recv_data);
+			pA++;
+			if(recv_size==0) goto st_end;
+			if(pA<17:0>==(recv_size-1)<17:0>) goto st_end;
+		}
+
+		state st_end par{
 			generate mem_clean.do();
 			f_reading_rom := 0b0;
-			goto st1;
+			goto st_init;
 		}
 	}
 
-	stage mem_clean { // WRAM Fill
+	stage mem_clean { // RAM Fill
 		first_state st1;
 		state st1 par{
 			pA := 0;
