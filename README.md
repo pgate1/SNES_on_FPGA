@@ -1,7 +1,8 @@
 # SNES on FPGA
 
 Implemented SNES on an FPGA.  
-The hardware discription language is original expanded SFL+.  
+
+The hardware discription language is original expanded SFL+. (<a href=https://pgate1.at-ninja.jp/memo/SFLP/>Beginning SFL+</a>)  
 (<a href=http://www-lab09.kuee.kyoto-u.ac.jp/parthenon/NTT/English/Tutorial/tutorial.htm>SFL: Structured Function description Language Tutorial</a>)
 
 FPGA data is available at:  
