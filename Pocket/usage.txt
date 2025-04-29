@@ -16,7 +16,6 @@ This will allow you to load save files, but you will not be able to save yet.
       snes
          common
             rom.sfc
-            rom.srm (If you have a save file)
    Cores
       pgate1.SNES
          bitstream.rbf_r
@@ -25,6 +24,10 @@ This will allow you to load save files, but you will not be able to save yet.
       _images
          snes.bin
       snes.json
+   Saves
+      snes
+         common
+            rom.srm (If you have a save file. Same file name as rom)
 
 3. OK. Insert the SD card into the Pocket, turn it on, and select SNES from openFPGA.
 
