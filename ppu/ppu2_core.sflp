@@ -308,8 +308,8 @@ reg_wr ready_rnd<6>;
 			}
 
 			if(FRAME.do &
-				(((f_overscan==0b0) & (scanline_tmp==224)) |
-				 ((f_overscan==0b1) & (scanline_tmp==239))) ){
+				(((f_overscan==0b0) & (scanline_tmp==224)) |   // for 225
+				 ((f_overscan==0b1) & (scanline_tmp==239))) ){ // for 240
 				vblank_begin();
 				vblank_tmp := 0b1;
 			}

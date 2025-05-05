@@ -436,7 +436,7 @@ output dbg<16>;
 		r2117_vaH := va_add_sig<14:8>;
 	}
 
-	instruct io_write any{
+	instruct io_write any{ // 0x21XX
 		ioA==0x00 : par{
 			// 即時 ok：アウターワールド
 			// temp ok：ヴァルケン,(バハムートラグーンOPのスプライト)
@@ -633,10 +633,18 @@ output dbg<16>;
 			col_win_io1 := io_D_in<4>; col_win_en1 := io_D_in<5>;
 			col_win_io2 := io_D_in<6>; col_win_en2 := io_D_in<7>;
 		}
-		ioA==0x26 : win1_left  := io_D_in;
-		ioA==0x27 : win1_right := io_D_in;
-		ioA==0x28 : win2_left  := io_D_in;
-		ioA==0x29 : win2_right := io_D_in;
+		ioA==0x26 : par{
+			win1_left := io_D_in;
+		}
+		ioA==0x27 : par{
+			win1_right := io_D_in;
+		}
+		ioA==0x28 : par{
+			win2_left := io_D_in;
+		}
+		ioA==0x29 : par{
+			win2_right := io_D_in;
+		}
 		ioA==0x2A : par{ // win logic
 			bg1_win_logic := io_D_in<1:0>; bg2_win_logic := io_D_in<3:2>;
 			bg3_win_logic := io_D_in<5:4>; bg4_win_logic := io_D_in<7:6>;

@@ -555,9 +555,18 @@ reg_wr err_reg;
 			if(/&pA<15:0>) goto st5;
 		}
 		state st5 par{
-			rom_read_ok := 0b1;
-			goto st1;
-			finish;
+			snes.soft_reset();
+			apu.soft_reset();
+			goto st6;
+		}
+		state st6 par{
+			reg_wr wait<4>;
+			wait++;
+			if(/&wait){
+				rom_read_ok := 0b1;
+				goto st1;
+				finish;
+			}
 		}
 	}
 

@@ -7,19 +7,13 @@ create_generated_clock -name clk_SDRAMp -source [get_pins {clkdiv_5/clkdiv_inst/
 create_generated_clock -name clk_CORE -source [get_pins {clkdiv_5/clkdiv_inst/CLKOUT}] -master_clock clk_PIXEL -divide_by 1 -multiply_by 2 [get_pins {pll_50/PLL_inst/CLKOUT0}]
 create_clock -name clk_AUDIO -period 31250.000 -waveform {0 15625.000} [get_nets {audio_clk}]
 
-//set_output_delay -clock clk_CORE -max 1.0 [all_outputs]
+set_false_path -from [get_clocks {clk_SYS}] -to [get_clocks {clk_PIXEL}]
+set_false_path -from [get_clocks {clk_SERIAL}] -to [get_clocks {clk_PIXEL}]
+set_false_path -from [get_clocks {clk_PIXEL}] -to [get_clocks {clk_SERIAL}]
+set_false_path -from [get_clocks {clk_PIXEL}] -to [get_clocks {clk_CORE}]
+set_false_path -from [get_clocks {clk_SDRAMp}] -to [get_clocks {clk_CORE}]
+set_false_path -from [get_clocks {clk_CORE}] -to [get_clocks {clk_PIXEL}]
+set_false_path -from [get_clocks {clk_CORE}] -to [get_clocks {clk_SERIAL}]
 
-set_input_delay -clock clk_CORE -max 8 [all_inputs]
-set_input_delay -clock clk_CORE -min 5 [all_inputs]
-set_output_delay -clock clk_CORE -max 5 [all_outputs]
-set_output_delay -clock clk_CORE -min -2 [all_outputs]
-
-set_false_path -from [get_clocks {clk_SERIAL}] -to [get_clocks {clk_CORE}] 
-set_false_path -from [get_clocks {clk_SDRAMp}] -to [get_clocks {clk_CORE}] 
-//set_false_path -from [get_clocks {clk_CORE}] -to [get_clocks {clk_SDRAM}] 
-//set_false_path -from [get_clocks {clk_SDRAM}] -to [get_clocks {clk_CORE}] 
-//set_false_path -from [get_clocks {clk_SYS}] -to [get_clocks {clk_SERIAL}] 
-//set_false_path -from [get_clocks {clk_SYS}] -to [get_clocks {clk_PIXEL}] 
-
-set_false_path -to [get_ports {LED[*]}]
-set_false_path -to [get_ports {PMOD0[*]}]
+set_false_path -from [get_ports {sys_reset_n, button_n}]
+set_false_path -to [get_ports {LED[*], PMOD0[*]}]
