@@ -58,7 +58,7 @@ circuit VGA_ctrl
 		if(h_win_valid) view();
 		h_view_valid := h_win_valid;
 
-		if(h_count==(800-1)){
+		if(h_count==(794-1)){
 			h_count := 0;
 			v_timing();
 		}
@@ -82,7 +82,7 @@ circuit VGA_ctrl
 			}
 		}
 
-		if(v_count==(525-1)){
+		if(v_count==(524-1)){
 			v_count := 0;
 			snes_vsync();
 		}

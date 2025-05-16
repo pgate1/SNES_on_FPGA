@@ -126,41 +126,27 @@ reg_wr dbg_reg;
 	any{
 		bank_reg<6>==0b0 : any{ // $00-$2F $30-$3F $80-$BF
 			adrs_reg<15:13>==0b000 : map_wram(); // $0000-$1FFF 000-_----_----_----
-			adrs_reg<15:12>==0b0010 : any{ // $2000-$2FFF 0010_----_----_----
-			//	adrs_reg<11:8>==0b0000 : map_reserve(); // $2000-$20FF 0010_0000_----_----
-				adrs_reg<11:6>==0b000100 : map_ppu1(); // $2100-$213F 0010_0001_00--_----
-				adrs_reg<11:6>==0b000101 : map_apu();  // $2140-$2143 -$217F 0010_0001_01--_----
+			adrs_reg<15:12>==0b0010 : any{       // $2000-$2FFF 0010_----_----_----
+			//	adrs_reg<11:8>==0b0000 : map_reserve();      // $2000-$20FF 0010_0000_----_----
+				adrs_reg<11:6>==0b000100 : map_ppu1();       // $2100-$213F 0010_0001_00--_----
+				adrs_reg<11:6>==0b000101 : map_apu();        // $2140-$2143-217F 0010_0001_01--_----
 				adrs_reg<11:2>==0b0001100000 : map_cowram(); // $2180-$2183 0010_0001_1000_00--
-				else : map_reserve(); // $2184-$2200-$2FFF
+				else : map_reserve();                        // $2184-$2200-$2FFF
 			}
-			adrs_reg<15:12>==0b0011 : map_dsp(); // $3000-$3FFF SFX, DSP 0011_----_----_----
-			adrs_reg<15:13>==0b010 : any{ // $4000-$5FFF 010-_----_----_----
-				adrs_reg<12:9>==0b0000 : map_pad();  // $4000-$41FF 0100_000-_----_----
+			adrs_reg<15:12>==0b0011 : map_dsp();      // $3000-$3FFF 0011_----_----_---- SFX,DSP
+			adrs_reg<15:13>==0b010 : any{             // $4000-$5FFF 010-_----_----_----
+				adrs_reg<12:9>==0b0000 : map_pad();   // $4000-$41FF 0100_000-_----_----
 				adrs_reg<12:8>==0b00010 : map_ppu2(); // $4200-$42FF 0100_0010_----_----
 				adrs_reg<12:8>==0b00011 : map_dma();  // $4300-$43FF 0100_0011_----_----
 				else : map_reserve();
 			}
 			adrs_reg<15:13>==0b011 : map_rom(); // $6000-$7FFF 011-_----_----_----
-			adrs_reg<15> : map_rom(); // $8000-$FFFF
+			adrs_reg<15> : map_rom();           // $8000-$FFFF
 			else : map_reserve();
 		}
-		bank_reg<7:5>==0b010 : par{ // $40-5F 010-_----
-			map_rom();
-		}
-		bank_reg<7:4>==0b0110 : par{ // $60-6F 0110_----
-			map_rom();
-		}
-		bank_reg<7:3>==0b01110 : par{ // $70-77 0111_0---
-			map_rom();
-		}
-		bank_reg<7:2>==0b011110 : par{ // $78-7B 0111_10--
-			map_rom();
-		}
-		bank_reg<7:1>==0b0111110 : par{ // $7C-7D 0111_110-
-			map_rom();
-		}
-		bank_reg<7:1>==0b0111111 : par{ // $7E,$7F 0111_111-
-			map_wram();
+		bank_reg<7:6>==0b01 : any{ // $40-7F 01--_----
+			bank_reg<5:1>==0b11111 : map_wram(); // $7E-7F 0111_111-
+			else : map_rom();                    // $40-7D 01--_----
 		}
 		bank_reg<7:6>==0b11 : par{ // $C0-FF 11--_----
 			map_rom();
@@ -231,7 +217,7 @@ reg_wr dbg_reg;
 
 		// rom bank 0x80-0xBF adrs 0x8000-0xFFFF or bank 0xC0-0xFF
 		(ppu2.f_cpu_speed & (((bank_reg<7:6>==0b10) & adrs_reg<15>) | (bank_reg<7:6>==0b11))) | 
-		map_ppu1 | map_ppu2 | map_apu | map_dma | (^mpu_mem_acc)  : par{ // –ñ3.5MHz 6cyc
+		map_ppu1 | map_ppu2 | map_apu | map_dma | (^mpu_mem_acc) : par{ // –ñ3.5MHz 6cyc
 			cpu_speed = 2;
 		}
 		else : par{ // map_pad map_wram map_rom map_cowram –ñ2.6MHz 8cyc

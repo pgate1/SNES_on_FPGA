@@ -234,7 +234,7 @@ circuit core
 		(keys[0x22] || keys[0x1B] || keys[0x29] || keys[0x5A] || 
 		 keys[0x75] || keys[0x72] || keys[0x6B] || keys[0x74] || 
 		 keys[0x23] || keys[0x24] || keys[0x2D] || keys[0x2C])
-		| (btn_0||0b0||btn_3||btn_1||0b0000||btn_2||0b000)
+		| (btn_0||0b0||btn_3||btn_1||SW<3:0>||btn_2||0b000)
 		| tas_key | pad_data;
 	snes.pad2P = /*SW<8>*/0b0 || 0b00000000000; // for RockmanX2 testmode
 
